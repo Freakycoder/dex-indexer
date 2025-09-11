@@ -1,4 +1,6 @@
 use redis::{Client, RedisError};
+
+use crate::types::grpc::{CustomTokenBalance, TransactionMetadata};
 #[derive(Debug)]
 pub struct QueueManager{
     redis_client : Client
@@ -31,6 +33,18 @@ impl QueueManager {
                 return;
             }
         };
+    }
+
+    fn get_metadata(&self, txn_meta : yellowstone_grpc_proto::solana::storage::confirmed_block::TransactionStatusMeta) -> TransactionMetadata{
+                
+        let pre_token_balances = txn_meta.pre_token_balances;
+
+        let custome_pre_token_balances : Vec<CustomTokenBalance> = pre_token_balances.iter().map(|item|{
+            
+            CustomTokenBalance { account_index: item.account_index, mint: item.mint, ui_token_amount: Some(item.ui_token_amount), owner: item.owner}
+        }).collect();
+        TransactionMetadata { log_messages: txn_meta.log_messages, pre_token_balances: custome_pre_token_balances, post_token_balances: txn_meta.post_token_balances}
+
     }
 
 }
