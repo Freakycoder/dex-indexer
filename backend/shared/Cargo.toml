@@ -1,0 +1,11 @@
+[package]
+name = "shared"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+redis = "0.32.5"
+yellowstone-grpc-client = "8.0.0"
+yellowstone-grpc-proto = "8.0.0"
+futures = "0.3.31"
+anyhow = "1.0.99"
