@@ -1,16 +1,24 @@
-use yellowstone_grpc_proto::solana::storage::confirmed_block::TokenBalance;
+use serde::Serialize;
 
-#[derive(Debug)]
+
+#[derive(Debug,Serialize)]
 pub struct TransactionMetadata{
-    pub pre_balances : Vec<u64>,
-    pub post_balances : Vec<u64>,
     pub log_messages : Vec<String>,
-    pub pre_token_balances : Vec<TokenBalance>,
-    pub post_token_balances : Vec<TokenBalance>,
+    pub pre_token_balances : Vec<CustomTokenBalance>,
+    pub post_token_balances : Vec<CustomTokenBalance>,
 }
 
-#[derive(Debug)]
-pub struct TransactionLogs{
-    pub transactionmetadata : TransactionMetadata,
-    pub account_keys : Vec<String>
+#[derive(Debug,Serialize)]
+pub struct CustomTokenBalance{
+    pub account_index: u32,
+    pub mint: String,
+    pub ui_token_amount: Option<CustomUiTokenAmount>,
+    pub owner: String
+}
+
+#[derive(Debug,Serialize)]
+pub struct CustomUiTokenAmount {
+    pub ui_amount: f64,
+    pub decimals: u32,
+    pub amount: String,
 }
