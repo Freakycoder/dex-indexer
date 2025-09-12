@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use futures::{StreamExt, SinkExt};// used for something that already implement the sink and stream trait. its like an interface for them, which provides them extra methods like .send().await or .next().await() or .map() or .filter() 
 use yellowstone_grpc_client::{ClientTlsConfig, GeyserGrpcClient};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterTransactions};
-use crate::types::grpc::TransactionMetadata;
+
+use crate::redis::queue_manager::QueueManager;
 
 const RADUIM_AMM_V4 : &str = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
 const RADUIM_CLMM : &str = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
@@ -60,6 +61,7 @@ pub async fn start_listening(&self) -> Result<(), anyhow::Error>{
     let (mut sink, mut stream) = client.subscribe().await?; //stream is nothing but the data (multiple items) you get from a source asynchronously.
 
     sink.send(subcription).await?;
+    let queue  = QueueManager::new().expect("error initializing queue");
 
     println!("Listening for transactions from grpc...");
 
@@ -71,7 +73,7 @@ pub async fn start_listening(&self) -> Result<(), anyhow::Error>{
                         yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof::Transaction(txn_item) => {
                             if let Some(txn) = txn_item.transaction{
                                 if let Some(txn_meta) = txn.meta{
-                                    let _ = self.get_transaction_metadata(txn_meta);
+                                    let _ = queue.enqueue_message(txn_meta);
                                 }
                                 else {
                                     println!("Metadata doesn't exist")
@@ -90,16 +92,6 @@ pub async fn start_listening(&self) -> Result<(), anyhow::Error>{
     };
     Ok(())
     
-}
-fn get_transaction_metadata(&self, txn_meta : yellowstone_grpc_proto::solana::storage::confirmed_block::TransactionStatusMeta) -> TransactionMetadata{
-    println!("------METADATA------");
-    println!("Pre Balances : {:?}", txn_meta.pre_balances);
-    println!("Post Balances : {:?}", txn_meta.post_balances);
-    println!("Log Messages : {:?}", txn_meta.log_messages);
-    println!("Pre Token Balances : {:?}", txn_meta.pre_token_balances);
-    println!("Post Token Balances : {:?}", txn_meta.post_token_balances);
-
-    TransactionMetadata { pre_balances: txn_meta.pre_balances, post_balances: txn_meta.post_balances, log_messages: txn_meta.log_messages, pre_token_balances: txn_meta.pre_token_balances, post_token_balances: txn_meta.post_token_balances }
 }
 }
 
