@@ -1,6 +1,6 @@
 use std::{thread::sleep, time::Duration};
-use sea_orm::DatabaseConnection;
-use crate::{redis::queue_manager::QueueManager, types::grpc::TransactionMetadata};
+use sea_orm::{prelude::DateTimeLocal, DatabaseConnection};
+use crate::{redis::queue_manager::QueueManager, types::{grpc::TransactionMetadata, worker::{StructeredTransaction, Type}}};
 
 #[derive(Debug)]
 pub struct QueueWorker{
@@ -39,13 +39,48 @@ impl QueueWorker {
         for messages in txn_meta.log_messages{
             if messages.contains("SwapV2") || messages.contains("SwapRaydiumV4"){
                 println!("✅ Detected a Radium swap");
+                let structured_txn = self.transform_swap(txn_meta);
 
             }
         }
     }
-    fn transform_swap(&self, txn_meta : TransactionMetadata){
-        let pre_balance = txn_meta.pre_token_balances;
-        let post_balance = txn_meta.post_token_balances;
-        
+    fn transform_swap(&self, txn_meta : TransactionMetadata) -> StructeredTransaction{
+        let pre_balance_array = txn_meta.pre_token_balances;
+        let post_balance_array = txn_meta.post_token_balances;
+
+        let pre_balance_array_json = serde_json::json!(pre_balance_array);
+        let pre_amount = pre_balance_array_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
+
+        let post_balance_array_json = serde_json::json!(post_balance_array);
+        let post_amount = post_balance_array_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
+
+        if post_amount > pre_amount {
+            let diff  = post_amount - pre_amount;
+
+            println!("BUY order transaction structured");
+            StructeredTransaction {
+                date : Time,
+                purchase_type : Type::Buy,
+                usd : 6.5,
+                dex_type : "Radium",
+                token_quantity : None,
+                token_price : None,
+                owner : pre_balance_array_json[0]["owner"].as_str()
+            }
+        }
+        else {
+            let diff = pre_amount - post_amount;
+            println!("SELL order transaction structured");
+
+            StructeredTransaction {
+                date : Time,
+                purchase_type : Type::Sell,
+                usd : 6.5,
+                dex_type : "Radium",
+                token_quantity : None,
+                token_price : None,
+                owner : pre_balance_array_json[0]["owner"].as_str()
+            }
+        }
     }
 }
