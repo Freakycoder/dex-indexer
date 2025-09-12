@@ -2,11 +2,11 @@ use sea_orm::prelude::DateTimeLocal;
 
 #[derive(Debug)]
 pub struct StructeredTransaction{
-    pub date : DateTimeLocal,
+    pub date : Time,
     pub purchase_type : Type,
-    pub usd : f64,
-    pub token : f64,
-    pub price : f64,
+    pub usd : Option<f64>,
+    pub token_quantity : f64,
+    pub token_price : f64,
     pub owner : String,
     pub dex_type : String,
 } 
