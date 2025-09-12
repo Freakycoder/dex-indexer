@@ -1,18 +1,21 @@
 use std::{thread::sleep, time::Duration};
 use sea_orm::{prelude::DateTimeLocal, DatabaseConnection};
-use crate::{redis::queue_manager::QueueManager, types::{grpc::TransactionMetadata, worker::{StructeredTransaction, Type}}};
+use tokio::sync::broadcast;
+use crate::{redis::queue_manager::QueueManager, types::{grpc::TransactionMetadata, worker::{StructeredTransaction, Type}}, websocket::ws_manager::WebsocketManager};
 
 #[derive(Debug)]
 pub struct QueueWorker{
     queue : QueueManager,
-    db : DatabaseConnection
+    db : DatabaseConnection,
+    websocket : WebsocketManager
 }
 
 impl QueueWorker {
-    pub fn new(queue : QueueManager, db : DatabaseConnection) -> Self{
+    pub fn new(queue : QueueManager, db : DatabaseConnection, websocket : WebsocketManager) -> Self{
         Self{
             queue,
-            db
+            db,
+            websocket
         }
     }
 
@@ -22,7 +25,7 @@ impl QueueWorker {
                 Ok(Some(txn_message)) => {
                     println!("Got txn messsage from the queue");
                     println!("Txn Metadata : {:?}",txn_message);
-                    self.filter_txns(txn_message);
+                    self.filter_and_send_txns(txn_message);
                 }
                 Ok(None) => {
                     println!("Queue empty, no message recieved");
@@ -35,12 +38,20 @@ impl QueueWorker {
             }
         }
     }
-    fn filter_txns(&self, txn_meta : TransactionMetadata){
+    fn filter_and_send_txns(&self, txn_meta : TransactionMetadata){
         for messages in txn_meta.log_messages{
             if messages.contains("SwapV2") || messages.contains("SwapRaydiumV4"){
                 println!("✅ Detected a Radium swap");
                 let structured_txn = self.transform_swap(txn_meta);
-
+                let string_txn = match serde_json::to_string(&structured_txn) {
+                        Ok(msg) => {
+                            msg
+                        }
+                        Err(e) => {
+                            println!("Error converting the structured txn to string")
+                        }
+                };
+                self.websocket.send_message(string_txn);
             }
         }
     }
