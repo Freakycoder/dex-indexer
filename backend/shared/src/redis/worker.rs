@@ -6,15 +6,13 @@ use crate::{redis::queue_manager::QueueManager, types::{grpc::TransactionMetadat
 #[derive(Debug)]
 pub struct QueueWorker{
     queue : QueueManager,
-    db : DatabaseConnection,
     websocket : WebsocketManager
 }
 
 impl QueueWorker {
-    pub fn new(queue : QueueManager, db : DatabaseConnection, websocket : WebsocketManager) -> Self{
+    pub fn new(queue : QueueManager, websocket : WebsocketManager) -> Self{
         Self{
             queue,
-            db,
             websocket
         }
     }
