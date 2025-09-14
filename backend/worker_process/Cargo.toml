@@ -1,0 +1,8 @@
+[package]
+name = "worker_process"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+shared = { path = "../shared"}
+tokio = "1.47.1"
