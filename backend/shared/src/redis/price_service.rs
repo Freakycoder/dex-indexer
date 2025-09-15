@@ -22,7 +22,7 @@ impl PriceService {
 
     async fn get_cache_price(&self) -> Option<SolPrice>{
         let cache = self.cache.read().await;
-        cache.get("sol_price").cloned()
+        cache.get("sol_price".to_string()).cloned()
     }
 
     pub async fn get_sol_price(&self) -> Option<f64>{
@@ -58,7 +58,7 @@ impl PriceService {
 
         let sol_price = response["solana"]["usd"]
             .as_f64()
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse price"))?;
+            .ok_or_else(|| anyhow::anyhow!("Error parsing sol value from response"))?;
 
         let mut cache = self.cache.write().await;
         cache.insert("sol_price".to_string(), SolPrice {
