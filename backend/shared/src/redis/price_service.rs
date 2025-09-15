@@ -1,16 +1,17 @@
 use std::{collections::HashMap, sync::Arc, time::{Duration, Instant}};
 
-use reqwest::{header::SEC_WEBSOCKET_ACCEPT, Client};
-use sea_orm_cli::cli;
+use reqwest::Client;
+use serde_json::Value;
 use tokio::sync::RwLock;
 
+#[derive(Clone)]
 struct SolPrice{
     pub sol_usd : f64,
     pub last_updated : Instant
 }
 
 #[derive(Debug)]
-struct PriceService{
+pub struct PriceService{
     cache : Arc<RwLock<HashMap<String , SolPrice>>>
 }
 
@@ -21,33 +22,33 @@ impl PriceService {
 
     async fn get_cache_price(&self) -> Option<SolPrice>{
         let cache = self.cache.read().await;
-        cache.get("sol_price")
+        cache.get("sol_price").cloned()
     }
 
-    async fn get_sol_price(&self) -> Option<f64>{
+    pub async fn get_sol_price(&self) -> Option<f64>{
         if let Some(cached_price) = self.get_cache_price().await{
             if cached_price.last_updated.elapsed() < Duration::from_secs(300){
                 return Some(cached_price.sol_usd);
             }
         }
 
-        match self.fetch_price_from_jupyter().await {
+        match self.fetch_price().await {
             Ok(sol_price) => {
-                sol_price
+                Some(sol_price)
             },
             Err(e) => {
-                println!("Error fetching sol price from jupyter : {}",e);
-                Some(self.get_cache_price())
+                println!("Error fetching sol price: {}", e);
+                self.get_cache_price().await.map(|cached| cached.sol_usd)
             }
         }
 
     }
 
-    async fn fetch_price_from_jupyter(&self) -> Result<f64, anyhow::Error>{
-        let url = format!("https://price.jup.ag/v4/price?id=SOL");
+    async fn fetch_price(&self) -> Result<f64, anyhow::Error>{
+        let url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd";
 
         let client = Client::new();
-        let response = client
+        let response: Value = client
             .get(url)
             .timeout(Duration::from_secs(15))
             .send()
@@ -55,8 +56,16 @@ impl PriceService {
             .json()
             .await?;
 
-        let write_cache = self.cache.write().await;
-        write_cache.insert("sol_price", response);
-        Ok(response.sol_usd)
+        let sol_price = response["solana"]["usd"]
+            .as_f64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse price"))?;
+
+        let mut cache = self.cache.write().await;
+        cache.insert("sol_price".to_string(), SolPrice {
+            sol_usd: sol_price,
+            last_updated: Instant::now(),
+        });
+
+        Ok(sol_price)
     }
 }
