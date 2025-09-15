@@ -10,13 +10,14 @@ pub struct QueueWorker{
     websocket : WebsocketManager,
     price_service : PriceService
 }
+const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
 impl QueueWorker {
-    pub fn new(queue : QueueManager, websocket : WebsocketManager, price_service : PriceService) -> Self{
+    pub fn new(queue : QueueManager, websocket : WebsocketManager) -> Self{
         Self{
             queue,
             websocket,
-            price_service
+            price_service : PriceService::new()
         }
     }
 
@@ -67,54 +68,58 @@ impl QueueWorker {
             return None;
         }
 
-        let sol_price = self.price_service.get_sol_price().await;
-
+        
         let pre_balance_json = serde_json::json!(pre_balance_array);
         let post_balance_json = serde_json::json!(post_balance_array);
-
+        
         let pre_amount = pre_balance_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
         let post_amount = post_balance_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
         let owner = pre_balance_json[0]["owner"].as_str()?.to_string();
         let pre_sol_quantity = pre_balance_json[2]["ui_token_amount"]["ui_amount"].as_f64()?;
         let post_sol_quantity = post_balance_json[2]["ui_token_amount"]["ui_amount"].as_f64()?;
+        
+        if pre_balance_json[3]["mint"].as_str() = SOL_MINT{
+            let sol_price = self.price_service.get_sol_price().await;
 
-        if let Some(sol_value) = sol_price{
-            
-            let (purchase_type, amount_diff, sol_quantity) = if post_amount > pre_amount {
-                println!("BUY order transaction structured");
-                (Type::Buy, post_amount - pre_amount, post_sol_quantity - pre_sol_quantity)
-            } else {
-                println!("SELL order transaction structured");
-                (Type::Sell, pre_amount - post_amount, pre_sol_quantity - post_sol_quantity)
-            };
-
-            let usd_price = sol_quantity * sol_value;
-
-            let price_per_token = if amount_diff == 0.0 {
-                0.0
-            } else {
-                usd_price / amount_diff
-            };
+            if let Some(sol_value) = sol_price{
+                
+                let (purchase_type, amount_diff, sol_quantity) = if post_amount > pre_amount {
+                    println!("BUY order transaction structured");
+                    (Type::Buy, post_amount - pre_amount, post_sol_quantity - pre_sol_quantity)
+                } else {
+                    println!("SELL order transaction structured");
+                    (Type::Sell, pre_amount - post_amount, pre_sol_quantity - post_sol_quantity)
+                };
     
-            return Some(StructeredTransaction {
-                date: chrono::Utc::now(),
-                purchase_type,
-                usd: usd_price,
-                dex_type: "Raydium".to_string(),
-                token_quantity: amount_diff,
-                token_price: price_per_token, 
-                owner,
-            });
+                let usd_price = sol_quantity * sol_value;
+    
+                let price_per_token = if amount_diff == 0.0 {
+                    0.0
+                } else {
+                    usd_price / amount_diff
+                };
+        
+                return Some(StructeredTransaction {
+                    date: chrono::Utc::now(),
+                    purchase_type,
+                    usd: usd_price,
+                    dex_type: "Raydium".to_string(),
+                    token_quantity: amount_diff,
+                    token_price: price_per_token, 
+                    owner,
+                });
+            }
+            Some(StructeredTransaction { 
+                date: chrono::Utc::now(), 
+                purchase_type: (), 
+                usd: (), 
+                token_quantity: (), 
+                token_price: (), 
+                owner: (), 
+                dex_type: () 
+            })
         }
-        Some(StructeredTransaction { 
-            date: chrono::Utc::now(), 
-            purchase_type: (), 
-            usd: (), 
-            token_quantity: (), 
-            token_price: (), 
-            owner: (), 
-            dex_type: () 
-        })
+
 
     }
 }
