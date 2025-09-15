@@ -1,41 +1,54 @@
-use std::{time::Duration};
-use sea_orm::{prelude::DateTimeLocal, DatabaseConnection};
-use tokio::sync::broadcast;
+use crate::{
+    redis::{price_service::PriceService, queue_manager::QueueManager},
+    types::{
+        grpc::{CustomTokenBalance, TransactionMetadata},
+        worker::{StructeredTransaction, Type},
+    },
+    websocket::ws_manager::WebsocketManager,
+};
+use std::{collections::HashMap, time::Duration};
 use tokio::time::sleep;
-use crate::{redis::queue_manager::QueueManager, types::{grpc::TransactionMetadata, worker::{StructeredTransaction, Type}}, websocket::ws_manager::WebsocketManager, redis::price_service::PriceService};
 
 #[derive(Debug)]
-pub struct QueueWorker{
-    queue : QueueManager,
-    websocket : WebsocketManager,
-    price_service : PriceService
+struct SwapAnalysis {
+    user_owner: String,
+    user_token_change: f64,
+    pool_sol_change: f64
+}
+
+#[derive(Debug)]
+pub struct QueueWorker {
+    queue: QueueManager,
+    websocket: WebsocketManager,
+    price_service: PriceService,
 }
 const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
 impl QueueWorker {
-    pub fn new(queue : QueueManager, websocket : WebsocketManager) -> Self{
-        Self{
+    pub fn new(queue: QueueManager, websocket: WebsocketManager) -> Self {
+        Self {
             queue,
             websocket,
-            price_service : PriceService::new()
+            price_service: PriceService::new(),
         }
     }
 
-    pub async fn start_processing(&self){
+    pub async fn start_processing(&self) {
+        println!("Worker started and waiting for messages...");
         loop {
-            match self.queue.dequeue_message().await{
+            match self.queue.dequeue_message().await {
                 Ok(Some(txn_message)) => {
                     println!("Got txn messsage from the queue");
-                    println!("Txn Metadata : {:?}",txn_message);
+                    println!("Txn Metadata : {:?}", txn_message);
                     self.filter_and_send_txns(txn_message).await;
                 }
                 Ok(None) => {
                     println!("Queue empty, no message recieved");
-                    sleep(Duration::from_millis(100));
+                    sleep(Duration::from_millis(100)).await;
                 }
                 Err(e) => {
                     println!("Error in redis queue : {}", e);
-                    sleep(Duration::from_millis(100));
+                    sleep(Duration::from_millis(100)).await;
                 }
             }
         }
@@ -44,8 +57,8 @@ impl QueueWorker {
         for message in &txn_meta.log_messages {
             if message.contains("SwapV2") || message.contains("SwapRaydiumV4") {
                 println!("✅ Detected a Raydium swap");
-                
-                if let Some(structured_txn) = self.transform_swap(txn_meta.clone()) {
+
+                if let Some(structured_txn) = self.transform_swap(txn_meta.clone()).await {
                     match serde_json::to_string(&structured_txn) {
                         Ok(txn_json) => {
                             self.websocket.push(txn_json).await;
@@ -59,64 +72,137 @@ impl QueueWorker {
             }
         }
     }
+
+    fn analyze_swap(
+        &self,
+        pre_balances: &[CustomTokenBalance],
+        post_balances: &[CustomTokenBalance],
+    ) -> Option<SwapAnalysis> {
+        let mut owner_balances: HashMap<String, Vec<(String, f64, f64)>> = HashMap::new(); // owner -> [(mint, pre_amount, post_amount)]
+
+        for (pre, post) in pre_balances.iter().zip(post_balances.iter()) {
+            let pre_amount = pre.ui_token_amount.as_ref()?.ui_amount;
+            let post_amount = post.ui_token_amount.as_ref()?.ui_amount;
+
+            owner_balances
+                .entry(pre.owner.clone())
+                .or_insert(Vec::new())
+                .push((pre.mint.clone(), pre_amount, post_amount));
+        }
+
+        let mut user_owner = String::new();
+        let mut pool_owner = String::new();
+
+        for (owner, balances) in &owner_balances {
+            let has_sol = balances.iter().any(|(mint, _, _)| mint == SOL_MINT);
+            let has_custom_token = balances.iter().any(|(mint, _, _)| mint != SOL_MINT);
+
+            if has_sol && has_custom_token {
+                pool_owner = owner.clone();
+            } else {
+                user_owner = owner.clone();
+            }
+        }
+
+        if user_owner.is_empty() || pool_owner.is_empty() {
+            println!("Could not identify user and pool owners");
+            return None;
+        }
+
+        let user_balances = owner_balances.get(&user_owner)?;
+        let pool_balances = owner_balances.get(&pool_owner)?;
+        let mut pool_sol_change = 0.0;
+        let mut user_token_change = 0.0;
+
+        for (mint, pre_amount, post_amount) in user_balances {
+            let change = post_amount - pre_amount;
+
+            if mint == SOL_MINT {
+                pool_sol_change = change;
+            } else {
+                user_token_change = change;
+            }
+        }
+
+        for (mint, pre_amount, post_amount) in pool_balances {
+            if mint == SOL_MINT {
+                pool_sol_change = post_amount - pre_amount;
+                break;
+            }
+        }
+
+        Some(SwapAnalysis {
+            user_owner,
+            user_token_change,
+            pool_sol_change
+        })
+    }
+
     async fn transform_swap(&self, txn_meta: TransactionMetadata) -> Option<StructeredTransaction> {
         let pre_balance_array = &txn_meta.pre_token_balances;
         let post_balance_array = &txn_meta.post_token_balances;
 
         if pre_balance_array.is_empty() || post_balance_array.is_empty() {
-            println!("⚠️ Missing token balance data");
+            println!(" Missing token balance data");
             return None;
         }
 
-        
-        let pre_balance_json = serde_json::json!(pre_balance_array);
-        let post_balance_json = serde_json::json!(post_balance_array);
-        
-        let pre_amount = pre_balance_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
-        let post_amount = post_balance_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
-        let owner = pre_balance_json[0]["owner"].as_str()?.to_string();
-        let pre_sol_quantity = pre_balance_json[2]["ui_token_amount"]["ui_amount"].as_f64()?;
-        let post_sol_quantity = post_balance_json[2]["ui_token_amount"]["ui_amount"].as_f64()?;
-        
-         let (purchase_type, amount_diff, sol_quantity) = if post_amount > pre_amount {
-                    println!("BUY order transaction structured");
-                    (Type::Buy, post_amount - pre_amount, post_sol_quantity - pre_sol_quantity)
-                } else {
-                    println!("SELL order transaction structured");
-                    (Type::Sell, pre_amount - post_amount, pre_sol_quantity - post_sol_quantity)
-                };
+        let analysis = self.analyze_swap(pre_balance_array, post_balance_array)?;
 
-        if pre_balance_json[2]["mint"].as_str() == SOL_MINT{
-            let sol_price = self.price_service.get_sol_price().await;
+        let (purchase_type, token_amount_change, sol_amount_abs) = if analysis.pool_sol_change < 0.0
+        {
+            println!(
+                "SELL : User Sold {} token, pool lost {} SOL",
+                analysis.user_token_change.abs(),
+                analysis.pool_sol_change.abs()
+            );
+            (
+                Type::Buy,
+                analysis.user_token_change.abs(),
+                analysis.pool_sol_change.abs(),
+            )
+        } else if analysis.pool_sol_change > 0.0 {
+            println!(
+                "BUY : User Bought {} token, pool gained {} SOL",
+                analysis.user_token_change.abs(),
+                analysis.pool_sol_change.abs()
+            );
+            (
+                Type::Sell,
+                analysis.user_token_change.abs(),
+                analysis.pool_sol_change.abs(),
+            )
+        } else {
+            println!("No SOL change detected in pool");
+            return None
+        };
 
-            if let Some(sol_value) = sol_price{
-    
-                let usd_price = sol_quantity * sol_value;
-    
-                let price_per_token = if amount_diff == 0.0 {
-                    0.0
-                } else {
-                    usd_price / amount_diff
-                };
-        
-                return Some(StructeredTransaction {
-                    date: chrono::Utc::now(),
-                    purchase_type,
-                    usd: usd_price,
-                    dex_type: "Raydium".to_string(),
-                    token_quantity: amount_diff,
-                    token_price: price_per_token, 
-                    owner,
-                });
-            }
-            Some(StructeredTransaction { 
-                date: chrono::Utc::now(), 
-                purchase_type, 
-                usd: None, 
-                token_quantity: amount_diff, 
-                token_price: None, 
-                owner, 
-                dex_type: "Raydium".to_string() 
+        if let Some(sol_price) = self.price_service.get_sol_price().await {
+            let usd_value = sol_amount_abs * sol_price;
+            let token_price = if token_amount_change > 0.0 {
+                usd_value / token_amount_change
+            } else {
+                0.0
+            };
+
+            Some(StructeredTransaction {
+                date: chrono::Utc::now(),
+                purchase_type,
+                usd: Some(usd_value),
+                token_quantity: token_amount_change,
+                token_price,
+                owner: analysis.user_owner,
+                dex_type: "Raydium".to_string(),
+            })
+        } else {
+            Some(StructeredTransaction {
+                date: chrono::Utc::now(),
+                purchase_type,
+                usd: None,
+                token_quantity: token_amount_change,
+                token_price: 0.0,
+                owner: analysis.user_owner,
+                dex_type: "Raydium".to_string(),
             })
         }
     }
