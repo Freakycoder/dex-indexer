@@ -1,19 +1,22 @@
-use std::{thread::sleep, time::Duration};
+use std::{time::Duration};
 use sea_orm::{prelude::DateTimeLocal, DatabaseConnection};
 use tokio::sync::broadcast;
-use crate::{redis::queue_manager::QueueManager, types::{grpc::TransactionMetadata, worker::{StructeredTransaction, Type}}, websocket::ws_manager::WebsocketManager};
+use tokio::time::sleep;
+use crate::{redis::queue_manager::QueueManager, types::{grpc::TransactionMetadata, worker::{StructeredTransaction, Type}}, websocket::ws_manager::WebsocketManager, redis::price_service::PriceService};
 
 #[derive(Debug)]
 pub struct QueueWorker{
     queue : QueueManager,
-    websocket : WebsocketManager
+    websocket : WebsocketManager,
+    price_service : PriceService
 }
 
 impl QueueWorker {
-    pub fn new(queue : QueueManager, websocket : WebsocketManager) -> Self{
+    pub fn new(queue : QueueManager, websocket : WebsocketManager, price_service : PriceService) -> Self{
         Self{
             queue,
-            websocket
+            websocket,
+            price_service
         }
     }
 
@@ -36,60 +39,82 @@ impl QueueWorker {
             }
         }
     }
-    fn filter_and_send_txns(&self, txn_meta : TransactionMetadata){
-        for messages in txn_meta.log_messages{
-            if messages.contains("SwapV2") || messages.contains("SwapRaydiumV4"){
-                println!("✅ Detected a Radium swap");
-                let structured_txn = self.transform_swap(txn_meta);
-                let string_txn = match serde_json::to_string(&structured_txn) {
-                        Ok(msg) => {
-                            msg
+    async fn filter_and_send_txns(&self, txn_meta: TransactionMetadata) {
+        for message in &txn_meta.log_messages {
+            if message.contains("SwapV2") || message.contains("SwapRaydiumV4") {
+                println!("✅ Detected a Raydium swap");
+                
+                if let Some(structured_txn) = self.transform_swap(txn_meta.clone()) {
+                    match serde_json::to_string(&structured_txn) {
+                        Ok(txn_json) => {
+                            self.websocket.push(txn_json).await;
                         }
                         Err(e) => {
-                            println!("Error converting the structured txn to string")
+                            println!("Error converting structured txn to string: {}", e);
                         }
-                };
-                self.websocket.send_message(string_txn);
+                    }
+                }
+                break; // Found a swap, no need to check other messages
             }
         }
     }
-    fn transform_swap(&self, txn_meta : TransactionMetadata) -> StructeredTransaction{
-        let pre_balance_array = txn_meta.pre_token_balances;
-        let post_balance_array = txn_meta.post_token_balances;
+    async fn transform_swap(&self, txn_meta: TransactionMetadata) -> Option<StructeredTransaction> {
+        let pre_balance_array = &txn_meta.pre_token_balances;
+        let post_balance_array = &txn_meta.post_token_balances;
 
-        let pre_balance_array_json = serde_json::json!(pre_balance_array);
-        let pre_amount = pre_balance_array_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
-
-        let post_balance_array_json = serde_json::json!(post_balance_array);
-        let post_amount = post_balance_array_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
-
-        if post_amount > pre_amount {
-            let diff  = post_amount - pre_amount;
-
-            println!("BUY order transaction structured");
-            StructeredTransaction {
-                date : Time,
-                purchase_type : Type::Buy,
-                usd : 6.5,
-                dex_type : "Radium",
-                token_quantity : None,
-                token_price : None,
-                owner : pre_balance_array_json[0]["owner"].as_str()
-            }
+        if pre_balance_array.is_empty() || post_balance_array.is_empty() {
+            println!("⚠️ Missing token balance data");
+            return None;
         }
-        else {
-            let diff = pre_amount - post_amount;
-            println!("SELL order transaction structured");
 
-            StructeredTransaction {
-                date : Time,
-                purchase_type : Type::Sell,
-                usd : 6.5,
-                dex_type : "Radium",
-                token_quantity : None,
-                token_price : None,
-                owner : pre_balance_array_json[0]["owner"].as_str()
-            }
+        let sol_price = self.price_service.get_sol_price().await;
+
+        let pre_balance_json = serde_json::json!(pre_balance_array);
+        let post_balance_json = serde_json::json!(post_balance_array);
+
+        let pre_amount = pre_balance_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
+        let post_amount = post_balance_json[0]["ui_token_amount"]["ui_amount"].as_f64()?;
+        let owner = pre_balance_json[0]["owner"].as_str()?.to_string();
+        let pre_sol_quantity = pre_balance_json[2]["ui_token_amount"]["ui_amount"].as_f64()?;
+        let post_sol_quantity = post_balance_json[2]["ui_token_amount"]["ui_amount"].as_f64()?;
+
+        if let Some(sol_value) = sol_price{
+            
+            let (purchase_type, amount_diff, sol_quantity) = if post_amount > pre_amount {
+                println!("BUY order transaction structured");
+                (Type::Buy, post_amount - pre_amount, post_sol_quantity - pre_sol_quantity)
+            } else {
+                println!("SELL order transaction structured");
+                (Type::Sell, pre_amount - post_amount, pre_sol_quantity - post_sol_quantity)
+            };
+
+            let usd_price = sol_quantity * sol_value;
+
+            let price_per_token = if amount_diff == 0.0 {
+                0.0
+            } else {
+                usd_price / amount_diff
+            };
+    
+            return Some(StructeredTransaction {
+                date: chrono::Utc::now(),
+                purchase_type,
+                usd: usd_price,
+                dex_type: "Raydium".to_string(),
+                token_quantity: amount_diff,
+                token_price: price_per_token, 
+                owner,
+            });
         }
+        Some(StructeredTransaction { 
+            date: chrono::Utc::now(), 
+            purchase_type: (), 
+            usd: (), 
+            token_quantity: (), 
+            token_price: (), 
+            owner: (), 
+            dex_type: () 
+        })
+
     }
 }
