@@ -2,23 +2,27 @@ use redis::{AsyncCommands, Client, RedisError, RedisResult};
 
 use crate::types::grpc::{CustomTokenBalance, TransactionMetadata};
 #[derive(Debug)]
-pub struct QueueManager{
-    redis_client : Client
+pub struct QueueManager {
+    redis_client: Client,
 }
 
 impl QueueManager {
-    pub fn new() -> Result<Self, RedisError>{
+    pub fn new() -> Result<Self, RedisError> {
         println!("Initializing redis queue...");
         let redis_url = "redis://localhost:6379";
-        let redis_client = Client::open(redis_url).map_err(|e|{
-            println!("Couldn't initialize a redis client : {}",e);
+        let redis_client = Client::open(redis_url).map_err(|e| {
+            println!("Couldn't initialize a redis client : {}", e);
             e
         })?;
-        Ok(Self { redis_client: redis_client })
+        Ok(Self {
+            redis_client: redis_client,
+        })
     }
 
-    pub async fn enqueue_message(&self,txn_meta : yellowstone_grpc_proto::solana::storage::confirmed_block::TransactionStatusMeta ) -> RedisResult<usize>{
-
+    pub async fn enqueue_message(
+        &self,
+        txn_meta: yellowstone_grpc_proto::solana::storage::confirmed_block::TransactionStatusMeta,
+    ) -> RedisResult<usize> {
         let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
         println!("------METADATA------");
         println!("Pre Balances : {:?}", txn_meta.pre_balances);
@@ -30,35 +34,45 @@ impl QueueManager {
         let metadata = self.get_metadata(txn_meta);
         let txn_json = serde_json::to_string(&metadata).expect("Error serializing the txn meta");
 
-        let queue_length:usize = conn.lpush("swap_transactions", txn_json).await?;
+        let queue_length: usize = conn.lpush("swap_transactions", txn_json).await?;
         println!("txn pushed to the queue");
         Ok(queue_length)
     }
 
-    pub async fn dequeue_message(&self) -> RedisResult<Option<TransactionMetadata>>{
+    pub async fn dequeue_message(&self) -> RedisResult<Option<TransactionMetadata>> {
         let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
-        let txn_message : Option<String> = conn.rpop("swap_transactions", None).await?;
+        let txn_message: Option<String> = conn.rpop("swap_transactions", None).await?;
 
-        match txn_message{
-            Some(message) => {match serde_json::from_str::<TransactionMetadata>(&message) {
+        match txn_message {
+            Some(message) => match serde_json::from_str::<TransactionMetadata>(&message) {
                 Ok(txn_json) => Ok(Some(txn_json)),
                 Err(e) => {
-                    println!("Failed to desearilize txn message {}",e);
-                    Ok(None)}
-            }}
-            None => {Ok(None)}
+                    println!("Failed to desearilize txn message {}", e);
+                    Ok(None)
+                }
+            },
+            None => Ok(None),
         }
     }
 
-    fn get_metadata(&self, txn_meta : yellowstone_grpc_proto::solana::storage::confirmed_block::TransactionStatusMeta) -> TransactionMetadata{
-                
-        let custom_pre_token_balances  = txn_meta.pre_token_balances.iter().map(CustomTokenBalance::from).collect();
-        let custom_post_token_balances = txn_meta.post_token_balances.iter().map(CustomTokenBalance::from).collect();
-        TransactionMetadata { 
-            log_messages: txn_meta.log_messages, 
-            pre_token_balances: custom_pre_token_balances, 
-            post_token_balances: custom_post_token_balances
+    fn get_metadata(
+        &self,
+        txn_meta: yellowstone_grpc_proto::solana::storage::confirmed_block::TransactionStatusMeta,
+    ) -> TransactionMetadata {
+        let custom_pre_token_balances = txn_meta
+            .pre_token_balances
+            .iter()
+            .map(CustomTokenBalance::from)
+            .collect();
+        let custom_post_token_balances = txn_meta
+            .post_token_balances
+            .iter()
+            .map(CustomTokenBalance::from)
+            .collect();
+        TransactionMetadata {
+            log_messages: txn_meta.log_messages,
+            pre_token_balances: custom_pre_token_balances,
+            post_token_balances: custom_post_token_balances,
         }
     }
-
 }
