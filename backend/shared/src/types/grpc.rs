@@ -1,14 +1,14 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use yellowstone_grpc_proto::solana::storage::confirmed_block::{TokenBalance, UiTokenAmount};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TransactionMetadata {
     pub log_messages: Vec<String>,
     pub pre_token_balances: Vec<CustomTokenBalance>,
     pub post_token_balances: Vec<CustomTokenBalance>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CustomTokenBalance {
     pub account_index: u32,
     pub mint: String,
@@ -16,7 +16,7 @@ pub struct CustomTokenBalance {
     pub owner: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CustomUiTokenAmount {
     pub ui_amount: f64,
     pub decimals: u32,
@@ -24,15 +24,16 @@ pub struct CustomUiTokenAmount {
     pub ui_amount_string: String,
 }
 
-// what we did here and why not name and serialize conflict
-
 impl From<&TokenBalance> for CustomTokenBalance {
     fn from(token_balance: &TokenBalance) -> Self {
         Self {
             account_index: token_balance.account_index,
             mint: token_balance.mint.clone(),
             owner: token_balance.owner.clone(),
-            ui_token_amount: token_balance.ui_token_amount.as_ref().map(CustomUiTokenAmount::from),
+            ui_token_amount: token_balance
+                .ui_token_amount
+                .as_ref()
+                .map(CustomUiTokenAmount::from),
         }
     }
 }
