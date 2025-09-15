@@ -4,22 +4,21 @@ use axum::{
     routing::get,
     Router,
 };
-use futures::{SinkExt, StreamExt, stream::SplitSink};
+use futures::{stream::SplitSink, SinkExt, StreamExt};
 use std::sync::{Arc, Mutex};
 
 type Client = SplitSink<WebSocket, Message>; // its just the another half of websocket. websocket.split() wala.
 type Clients = Arc<Mutex<Vec<Client>>>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WebsocketManager {
     clients: Clients,
 }
 
 impl WebsocketManager {
     pub fn new() -> Self {
-        
         Self {
-            clients: Arc::new(Mutex::new(Vec::new()))
+            clients: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -30,13 +29,13 @@ impl WebsocketManager {
     }
 
     pub async fn push(&self, msg: String) {
-        let message = Message::Text(msg);
+        let message = Message::Text(msg.into());
         let mut clients = self.clients.lock().unwrap();
-        
+
         for client in clients.iter_mut() {
-            let _ = client.send(msg).await;
-        };
-        
+            let _ = client.send(message.clone()).await;
+        }
+
         println!("Message sent to {} clients", clients.len());
     }
 }
@@ -50,13 +49,15 @@ async fn websocket_handler(
 
 async fn handle_socket(socket: WebSocket, manager: WebsocketManager) {
     let (sender, mut receiver) = socket.split();
-    
-    let mut clients = manager.clients.lock().unwrap();
-    clients.push(sender);
-    println!("WebSocket client connected (total: {})", clients.len());
-    
+
+    {
+        let mut clients = manager.clients.lock().unwrap();
+        clients.push(sender);
+        println!("🔗 WebSocket client connected (total: {})", clients.len());
+    }
+
     // Just wait until client disconnects ()
     while receiver.next().await.is_some() {}
-    
+
     println!("🔌 WebSocket client disconnected");
 }
