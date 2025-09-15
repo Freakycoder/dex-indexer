@@ -27,7 +27,7 @@ impl QueueWorker {
                 Ok(Some(txn_message)) => {
                     println!("Got txn messsage from the queue");
                     println!("Txn Metadata : {:?}",txn_message);
-                    self.filter_and_send_txns(txn_message);
+                    self.filter_and_send_txns(txn_message).await;
                 }
                 Ok(None) => {
                     println!("Queue empty, no message recieved");
@@ -78,18 +78,18 @@ impl QueueWorker {
         let pre_sol_quantity = pre_balance_json[2]["ui_token_amount"]["ui_amount"].as_f64()?;
         let post_sol_quantity = post_balance_json[2]["ui_token_amount"]["ui_amount"].as_f64()?;
         
-        if pre_balance_json[3]["mint"].as_str() = SOL_MINT{
-            let sol_price = self.price_service.get_sol_price().await;
-
-            if let Some(sol_value) = sol_price{
-                
-                let (purchase_type, amount_diff, sol_quantity) = if post_amount > pre_amount {
+         let (purchase_type, amount_diff, sol_quantity) = if post_amount > pre_amount {
                     println!("BUY order transaction structured");
                     (Type::Buy, post_amount - pre_amount, post_sol_quantity - pre_sol_quantity)
                 } else {
                     println!("SELL order transaction structured");
                     (Type::Sell, pre_amount - post_amount, pre_sol_quantity - post_sol_quantity)
                 };
+
+        if pre_balance_json[2]["mint"].as_str() == SOL_MINT{
+            let sol_price = self.price_service.get_sol_price().await;
+
+            if let Some(sol_value) = sol_price{
     
                 let usd_price = sol_quantity * sol_value;
     
@@ -111,15 +111,13 @@ impl QueueWorker {
             }
             Some(StructeredTransaction { 
                 date: chrono::Utc::now(), 
-                purchase_type: (), 
-                usd: (), 
-                token_quantity: (), 
-                token_price: (), 
-                owner: (), 
-                dex_type: () 
+                purchase_type, 
+                usd: None, 
+                token_quantity: amount_diff, 
+                token_price: None, 
+                owner, 
+                dex_type: "Raydium".to_string() 
             })
         }
-
-
     }
 }
