@@ -4,21 +4,22 @@ use axum::{
     routing::get,
     Router,
 };
-use futures::{stream::SplitSink, SinkExt, StreamExt};
-use std::sync::{Arc, Mutex};
-
-type Client = SplitSink<WebSocket, Message>; // its just the another half of websocket. websocket.split() wala.
-type Clients = Arc<Mutex<Vec<Client>>>;
+use futures::{SinkExt, StreamExt};
+use std::sync::Arc;
+use tokio::sync::{broadcast, Mutex};
 
 #[derive(Clone, Debug)]
 pub struct WebsocketManager {
-    clients: Clients,
+    sender: broadcast::Sender<String>,
+    client_count: Arc<Mutex<usize>>,
 }
 
 impl WebsocketManager {
     pub fn new() -> Self {
+        let (sender, _) = broadcast::channel(1000);
         Self {
-            clients: Arc::new(Mutex::new(Vec::new())),
+            sender,
+            client_count: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -29,14 +30,28 @@ impl WebsocketManager {
     }
 
     pub async fn push(&self, msg: String) {
-        let message = Message::Text(msg.into());
-        let mut clients = self.clients.lock().unwrap();
-
-        for client in clients.iter_mut() {
-            let _ = client.send(message.clone()).await;
+        let count = *self.client_count.lock().await;
+        
+        match self.sender.send(msg) {
+            Ok(_) => {
+                println!("📤 Message sent to {} clients", count);
+            }
+            Err(_) => {
+                println!("⚠️ No clients connected to receive message");
+            }
         }
+    }
 
-        println!("Message sent to {} clients", clients.len());
+    async fn increment_client_count(&self) {
+        let mut count = self.client_count.lock().await;
+        *count += 1;
+        println!("🔗 WebSocket client connected (total: {})", *count);
+    }
+
+    async fn decrement_client_count(&self) {
+        let mut count = self.client_count.lock().await;
+        *count = count.saturating_sub(1);
+        println!("🔌 WebSocket client disconnected (total: {})", *count);
     }
 }
 
@@ -48,16 +63,36 @@ async fn websocket_handler(
 }
 
 async fn handle_socket(socket: WebSocket, manager: WebsocketManager) {
-    let (sender, mut receiver) = socket.split();
+    let (mut socket_sender, mut socket_receiver) = socket.split();
+    let mut receiver = manager.sender.subscribe();
 
-    {
-        let mut clients = manager.clients.lock().unwrap();
-        clients.push(sender);
-        println!("🔗 WebSocket client connected (total: {})", clients.len());
+    // Increment client count
+    manager.increment_client_count().await;
+
+    // Task to send messages to this client
+    let send_task = tokio::spawn(async move {
+        while let Ok(message) = receiver.recv().await {
+            if socket_sender.send(Message::Text(message.into())).await.is_err() {
+                break; // Client disconnected
+            }
+        }
+    });
+
+    // Task to handle client disconnection
+    let recv_task = tokio::spawn(async move {
+        while let Some(msg) = socket_receiver.next().await {
+            if msg.is_err() {
+                break; // Client disconnected
+            }
+        }
+    });
+
+    // Wait for either task to complete (client disconnect)
+    tokio::select! {
+        _ = send_task => {},
+        _ = recv_task => {},
     }
 
-    // Just wait until client disconnects ()
-    while receiver.next().await.is_some() {}
-
-    println!("🔌 WebSocket client disconnected");
+    // Decrement client count
+    manager.decrement_client_count().await;
 }
