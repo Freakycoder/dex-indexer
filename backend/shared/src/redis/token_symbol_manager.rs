@@ -1,4 +1,5 @@
-use redis::{AsyncCommands, Client};
+use chrono::{DateTime,Utc};
+use redis::{AsyncCommands, Client, RedisError};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -7,14 +8,28 @@ pub struct TokenInfo {
     token_name: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SolInfo {
+    pub sol_price: f64,
+    pub last_updated: DateTime<Utc>,
+}
+
 #[derive(Debug)]
 pub struct TokenSymbolManager {
     redis_client: Client,
 }
 
 impl TokenSymbolManager {
-    pub fn new(redis_client: Client) -> Self {
-        Self { redis_client }
+    pub fn new() -> Result<Self, RedisError> {
+        println!("Initializing redis queue...");
+        let redis_url = "redis://localhost:6379";
+        let redis_client = Client::open(redis_url).map_err(|e| {
+            println!("Couldn't initialize a redis client : {}", e);
+            e
+        })?;
+        Ok(Self {
+            redis_client: redis_client,
+        })
     }
 
     pub async fn create_mint_info(
@@ -36,7 +51,11 @@ impl TokenSymbolManager {
 
     pub async fn store_sol_value(&self, sol_price: f64) -> Result<(), anyhow::Error> {
         let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
-        let price_string = serde_json::to_string(&sol_price)?;
+        let sol_info = SolInfo{
+            sol_price,
+            last_updated : Utc::now()
+        };
+        let price_string = serde_json::to_string(&sol_info)?;
         let _: () = conn.set("sol_price", price_string).await?;
         println!("updated SOL price");
         Ok(())
@@ -74,7 +93,7 @@ impl TokenSymbolManager {
         }
     }
 
-    pub async fn get_sol_value(&self) -> Option<f64>{
+    pub async fn get_sol_value(&self) -> Option<SolInfo>{
         let mut conn = match self.redis_client.get_multiplexed_async_connection().await {
             Ok(conn) => conn,
             Err(_) => {
@@ -90,16 +109,16 @@ impl TokenSymbolManager {
             }
         };
 
-        if let Some(price_string) = sol_price_string {
+        if let Some(sol_info_string) = sol_price_string {
             println!("Found SOL price in the redis server");
-            let sol_price: f64 = match serde_json::from_str(&price_string) {
+            let sol_info : SolInfo  = match serde_json::from_str(&sol_info_string) {
                 Ok(data) => data,
                 Err(_) => {
                     println!("Error getting session data from the server");
                     return None;
                 }
             };
-            Some(sol_price)
+            Some(sol_info)
         } else {
             println!("Did not find SOL price in the redis server");
             None
