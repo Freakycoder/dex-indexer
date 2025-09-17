@@ -1,39 +1,42 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
+use chrono::{DateTime, Utc, Duration};
 use reqwest::Client;
 use serde_json::Value;
-use tokio::sync::RwLock;
+use crate::redis::token_symbol_manager::TokenSymbolManager;
 
 #[derive(Clone, Debug)]
 struct SolPrice {
     pub sol_usd: f64,
-    pub last_updated: Instant,
+    pub last_updated: DateTime<Utc>,
 }
 
 #[derive(Debug)]
 pub struct PriceService {
-    cache: Arc<RwLock<HashMap<String, SolPrice>>>,
+    token_manager : TokenSymbolManager
 }
 
 impl PriceService {
-    pub fn new() -> Self {
+    pub fn new(token_manager : TokenSymbolManager) -> Self {
         Self {
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            token_manager
         }
     }
 
     async fn get_cache_price(&self) -> Option<SolPrice> {
-        let cache = self.cache.read().await;
-        cache.get("sol_price").cloned()
+        if let Some(sol_info) = self.token_manager.get_sol_value().await{
+           println!("Got SOL value from redis");
+           
+
+           Some(SolPrice { sol_usd: sol_info.sol_price, last_updated: sol_info.last_updated })
+        } else {
+            println!("Got no SOL value from redis");
+          return None;  
+        }
+        
     }
 
     pub async fn get_sol_price(&self) -> Option<f64> {
         if let Some(cached_price) = self.get_cache_price().await {
-            if cached_price.last_updated.elapsed() < Duration::from_secs(300) {
+            if Utc::now().signed_duration_since(cached_price.last_updated) < Duration::seconds(300) {
                 return Some(cached_price.sol_usd);
             }
         }
@@ -53,7 +56,6 @@ impl PriceService {
         let client = Client::new();
         let response: Value = client
             .get(url)
-            .timeout(Duration::from_secs(15))
             .send()
             .await?
             .json()
@@ -63,14 +65,8 @@ impl PriceService {
             .as_f64()
             .ok_or_else(|| anyhow::anyhow!("Error parsing sol value from response"))?;
 
-        let mut cache = self.cache.write().await;
-        cache.insert(
-            "sol_price".to_string(),
-            SolPrice {
-                sol_usd: sol_price,
-                last_updated: Instant::now(),
-            },
-        );
+        self.token_manager.store_sol_value(sol_price).await?;
+        println!("Successfully stored SOL price in redis");
 
         Ok(sol_price)
     }
