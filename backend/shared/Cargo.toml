@@ -17,3 +17,7 @@ tokio = "1.47.1"
 axum = {version = "0.8.4", features = ["ws"]}
 reqwest = {version = "0.12.23", features = ["json"]}
 chrono = "0.4.42"
+lazy_static = "1.5.0"
+solana-program = "3.0.0"
+mpl-token-metadata = "5.1.1"
+solana-client = "3.0.2"
