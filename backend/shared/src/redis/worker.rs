@@ -1,5 +1,5 @@
 use crate::{
-    redis::{price_service::PriceService, queue_manager::QueueManager},
+    redis::{price_service::PriceService, queue_manager::QueueManager, token_symbol_manager::TokenSymbolManager},
     types::{
         grpc::{CustomTokenBalance, TransactionMetadata},
         worker::{StructeredTransaction, Type},
@@ -13,7 +13,9 @@ use tokio::time::sleep;
 struct SwapAnalysis {
     user_owner: String,
     user_token_change: f64,
-    pool_sol_change: f64
+    pool_sol_change: f64,
+    token_name : String,
+    token_symbol : String
 }
 
 #[derive(Debug)]
@@ -26,10 +28,11 @@ const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
 impl QueueWorker {
     pub fn new(queue: QueueManager, websocket: WebsocketManager) -> Self {
+        let token_manager = TokenSymbolManager::new().expect("Error creating a token symbol manager");
         Self {
             queue,
             websocket,
-            price_service: PriceService::new(),
+            price_service: PriceService::new(token_manager),
         }
     }
 
@@ -73,7 +76,7 @@ impl QueueWorker {
         }
     }
 
-    fn analyze_swap(
+    async fn analyze_swap(
         &self,
         pre_balances: &[CustomTokenBalance],
         post_balances: &[CustomTokenBalance],
@@ -109,6 +112,18 @@ impl QueueWorker {
             return None;
         }
 
+        let mut token_name  = String::new();
+        let mut token_symbol = String::new();
+
+        if let Some(user_info) = owner_balances.get(&user_owner){
+            for (token_mint, _, _) in user_info{
+                if let Some(token_info) = self.price_service.get_mint_info(token_mint).await{
+                    token_name = token_info.token_name;
+                    token_symbol = token_info.token_symbol;
+                }
+            }
+        }
+
         let user_balances = owner_balances.get(&user_owner)?;
         let pool_balances = owner_balances.get(&pool_owner)?;
         let mut pool_sol_change = 0.0;
@@ -134,7 +149,9 @@ impl QueueWorker {
         Some(SwapAnalysis {
             user_owner,
             user_token_change,
-            pool_sol_change
+            pool_sol_change,
+            token_name,
+            token_symbol
         })
     }
 
@@ -147,7 +164,7 @@ impl QueueWorker {
             return None;
         }
 
-        let analysis = self.analyze_swap(pre_balance_array, post_balance_array)?;
+        let analysis = self.analyze_swap(pre_balance_array, post_balance_array).await?;
 
         let (purchase_type, token_amount_change, sol_amount_abs) = if analysis.pool_sol_change < 0.0
         {
@@ -191,6 +208,8 @@ impl QueueWorker {
                 usd: Some(usd_value),
                 token_quantity: token_amount_change,
                 token_price,
+                token_pair : format!("{}/SOL", analysis.token_symbol),
+                token_name : analysis.token_name,
                 owner: analysis.user_owner,
                 dex_type: "Raydium".to_string(),
             })
@@ -201,6 +220,8 @@ impl QueueWorker {
                 usd: None,
                 token_quantity: token_amount_change,
                 token_price: 0.0,
+                token_pair : format!("{}/SOL", analysis.token_symbol),
+                token_name : analysis.token_name,
                 owner: analysis.user_owner,
                 dex_type: "Raydium".to_string(),
             })
