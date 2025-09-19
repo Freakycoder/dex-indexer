@@ -108,7 +108,7 @@ impl QueueWorker {
         }
 
         if user_owner.is_empty() || pool_owner.is_empty() {
-            println!("Could not identify user and pool owners");
+            println!("Either USER or POOL ACCOUNT missing");
             return None;
         }
 
@@ -165,6 +165,7 @@ impl QueueWorker {
         }
 
         let analysis = self.analyze_swap(pre_balance_array, post_balance_array).await?;
+        println!("Got swap analysis for the swap");
 
         let (purchase_type, token_amount_change, sol_amount_abs) = if analysis.pool_sol_change < 0.0
         {
@@ -174,7 +175,7 @@ impl QueueWorker {
                 analysis.pool_sol_change.abs()
             );
             (
-                Type::Buy,
+                Type::Sell,
                 analysis.user_token_change.abs(),
                 analysis.pool_sol_change.abs(),
             )
@@ -185,13 +186,25 @@ impl QueueWorker {
                 analysis.pool_sol_change.abs()
             );
             (
-                Type::Sell,
+                Type::Buy,
                 analysis.user_token_change.abs(),
                 analysis.pool_sol_change.abs(),
             )
         } else {
             println!("No SOL change detected in pool");
             return None
+        };
+
+        let token_pair = if !analysis.token_symbol.is_empty() {
+            format!("{}/SOL", analysis.token_symbol)
+        } else {
+            format!("{}/SOL", "UNKNOWN")
+        };
+
+        let token_name = if !analysis.token_name.is_empty() {
+            analysis.token_name
+        } else {
+            analysis.token_symbol.clone()
         };
 
         if let Some(sol_price) = self.price_service.get_sol_price().await {
@@ -208,8 +221,8 @@ impl QueueWorker {
                 usd: Some(usd_value),
                 token_quantity: token_amount_change,
                 token_price,
-                token_pair : format!("{}/SOL", analysis.token_symbol),
-                token_name : analysis.token_name,
+                token_pair,
+                token_name,
                 owner: analysis.user_owner,
                 dex_type: "Raydium".to_string(),
             })
@@ -220,8 +233,8 @@ impl QueueWorker {
                 usd: None,
                 token_quantity: token_amount_change,
                 token_price: 0.0,
-                token_pair : format!("{}/SOL", analysis.token_symbol),
-                token_name : analysis.token_name,
+                token_pair,
+                token_name,
                 owner: analysis.user_owner,
                 dex_type: "Raydium".to_string(),
             })
