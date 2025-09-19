@@ -1,7 +1,12 @@
+use anyhow::Context;
 use chrono::{DateTime, Utc, Duration};
 use reqwest::Client;
 use serde_json::Value;
-use crate::redis::token_symbol_manager::TokenSymbolManager;
+use solana_program::{pubkey::Pubkey};
+use mpl_token_metadata::{programs::MPL_TOKEN_METADATA_ID, accounts::Metadata};
+use crate::{redis::token_symbol_manager::TokenSymbolManager, types::price::TokenInfo};
+use std::str::FromStr;
+use solana_client::rpc_client::RpcClient;
 
 #[derive(Clone, Debug)]
 struct SolPrice {
@@ -9,15 +14,25 @@ struct SolPrice {
     pub last_updated: DateTime<Utc>,
 }
 
-#[derive(Debug)]
 pub struct PriceService {
-    token_manager : TokenSymbolManager
+    token_manager : TokenSymbolManager,
+    rpc_client : RpcClient
+}
+
+impl std::fmt::Debug for PriceService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PriceService")
+            .field("token_manager", &self.token_manager)
+            .field("rpc_client", &"RpcClient")
+            .finish()
+    }
 }
 
 impl PriceService {
     pub fn new(token_manager : TokenSymbolManager) -> Self {
         Self {
-            token_manager
+            token_manager,
+            rpc_client : RpcClient::new(std::env::var("HELIUS_URL").expect("Helius url not present in env"))
         }
     }
 
@@ -69,5 +84,77 @@ impl PriceService {
         println!("Successfully stored SOL price in redis");
 
         Ok(sol_price)
+    }
+
+    pub async fn get_mint_info(&self, mint_address: &String) -> Option<TokenInfo>{
+        let token_info  =  self.token_manager.get_mint_info(mint_address).await;
+           
+        match token_info {
+            Some(info) => Some(info),
+            None => None
+        }
+    }
+
+    pub fn get_metadata_pda_address(
+        &self,
+        mint_address: &str,
+    ) -> Result<Pubkey, anyhow::Error> {
+        let mint_pubkey = Pubkey::from_str(mint_address).context("Error occured while parsing pubkey")?;
+        let mpl_program_id = Pubkey::new_from_array(MPL_TOKEN_METADATA_ID.to_bytes());
+        let meta_seeds = &[
+            b"metadata",
+            MPL_TOKEN_METADATA_ID.as_ref(),
+            mint_pubkey.as_ref(),
+        ];
+        let (metadata_pda, _) = Pubkey::find_program_address(meta_seeds, &mpl_program_id);
+        Ok(metadata_pda)
+    }
+
+     fn get_metadeta_pda_data(
+        &self,
+        mint_address: String,
+    ) -> Result<Option<Vec<u8>>, anyhow::Error> {
+        let metadata_pda = self.get_metadata_pda_address(&mint_address)?;
+
+        match self.rpc_client.get_account(&metadata_pda) {
+            Ok(account) => {
+                println!("Metadata account found");
+                println!("Data length {} bytes", account.data.len());
+
+                let mpl_program_id = Pubkey::new_from_array(MPL_TOKEN_METADATA_ID.to_bytes());
+                if account.owner == mpl_program_id {
+                    Ok(Some(account.data)) // we're returning vector of bytes
+                } else {
+                    println!("But account not owned by metaplex program");
+                    Ok(None)
+                }
+            }
+            Err(rpc_error) => {
+                println!("❌ RPC Error fetching metadata account: {:?}", rpc_error);
+                Ok(None)
+            }
+        }
+    }
+
+    pub async fn parse_metadata_pda_data(
+        &self,
+        mint_address: String
+    ) -> Result<Option<TokenInfo>, anyhow::Error> {
+        let metadata_account_data = match self.get_metadeta_pda_data(mint_address.clone()) {
+            Ok(Some(data_byte)) => data_byte, // the return type is result of option, so we check for both some and none
+            Ok(None) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        println!("📋 Parsing metadata account...");
+
+        match Metadata::safe_deserialize(&metadata_account_data) {
+            Ok(metadeta) => {
+                self.token_manager.create_mint_info(mint_address, metadeta.symbol.clone(), metadeta.name.clone()).await.expect("Error saving mint info to redis cache");
+                return Ok(Some(TokenInfo { token_symbol: metadeta.symbol, token_name: metadeta.name }));
+                }
+            Err(_) => {
+                println!("no metadata found for the mint : {}", mint_address);
+                Ok(None)}
+        }                
     }
 }
