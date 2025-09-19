@@ -1,12 +1,7 @@
 use chrono::{DateTime,Utc};
 use redis::{AsyncCommands, Client, RedisError};
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TokenInfo {
-    token_symbol: String,
-    token_name: String,
-}
+use crate::types::price::TokenInfo;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SolInfo {
@@ -61,7 +56,7 @@ impl TokenSymbolManager {
         Ok(())
     }
 
-    pub async fn get_mint_info(&self, mint_address: String) -> Option<TokenInfo> {
+    pub async fn get_mint_info(&self, mint_address: &String) -> Option<TokenInfo> {
         let mut conn = match self.redis_client.get_multiplexed_async_connection().await {
             Ok(conn) => conn,
             Err(_) => {
