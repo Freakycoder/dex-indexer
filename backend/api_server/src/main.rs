@@ -7,6 +7,7 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("🚀 Starting API server...");
 
     let ws_manager = WebsocketManager::new();
+    let ws_manager_clone = ws_manager.clone(); // Explicit clone
 
     let api_routes = Router::new()
         .route("/", get(handler))
@@ -18,8 +19,10 @@ async fn main() -> Result<(), anyhow::Error> {
 
     tokio::spawn(async move {
         println!("🔧 Starting worker...");
+        
         let queue = QueueManager::new().expect("Failed to create queue");
-        let worker = QueueWorker::new(queue, ws_manager);
+        let worker = QueueWorker::new(queue, ws_manager_clone);
+        
         worker.start_processing().await;
     });
 
