@@ -89,9 +89,22 @@ impl PriceService {
     pub async fn get_mint_info(&self, mint_address: &String) -> Option<TokenInfo>{
         let token_info  =  self.token_manager.get_mint_info(mint_address).await;
            
-        match token_info {
+       match token_info {
             Some(info) => Some(info),
-            None => None
+            None => {
+                println!("Token not in cache, fetching from blockchain for mint: {}", mint_address);
+                match self.parse_metadata_pda_data(mint_address.clone()).await {
+                    Ok(Some(info)) => Some(info),
+                    Ok(None) => {
+                        println!("No metadata found on-chain for mint: {}", mint_address);
+                        None
+                    },
+                    Err(e) => {
+                        println!("Error fetching metadata for mint {}: {}", mint_address, e);
+                        None
+                    }
+                }
+            }
         }
     }
 
@@ -110,7 +123,7 @@ impl PriceService {
         Ok(metadata_pda)
     }
 
-     fn get_metadeta_pda_data(
+     fn get_metadata_pda_data(
         &self,
         mint_address: String,
     ) -> Result<Option<Vec<u8>>, anyhow::Error> {
@@ -140,7 +153,7 @@ impl PriceService {
         &self,
         mint_address: String
     ) -> Result<Option<TokenInfo>, anyhow::Error> {
-        let metadata_account_data = match self.get_metadeta_pda_data(mint_address.clone()) {
+        let metadata_account_data = match self.get_metadata_pda_data(mint_address.clone()) {
             Ok(Some(data_byte)) => data_byte, // the return type is result of option, so we check for both some and none
             Ok(None) => return Ok(None),
             Err(e) => return Err(e),
