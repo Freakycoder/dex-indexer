@@ -8,6 +8,8 @@ pub struct StructeredTransaction {
     pub usd: Option<f64>,
     pub token_quantity: f64,
     pub token_price: f64,
+    pub token_pair : String,
+    pub token_name : String,
     pub owner: String,
     pub dex_type: String,
 }
