@@ -1,123 +1,103 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+// src/hooks/useWebSocketRoom.tsx
 
-export interface TransactionData {
-  date: string;
-  purchase_type: 'Buy' | 'Sell';
-  usd: number | null;
-  token_quantity: number;
-  token_price: number;
-  owner: string;
-  dex_type: string;
-}
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useGlobalWebSocket, TransactionData } from '../context/WebsocketContext';
 
-export interface UseWebSocketReturn {
+interface UseWebSocketRoomReturn {
   transactions: TransactionData[];
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
-  lastMessage: string | null;
-  connect: () => void;
-  disconnect: () => void;
+  subscriberCount: number;
+  isSubscribed: boolean;
+  joinRoom: () => void;
+  leaveRoom: () => void;
   clearTransactions: () => void;
 }
 
-export const useWebSocket = (url: string = 'ws://localhost:3001/ws'): UseWebSocketReturn => {
+export const useWebSocketRoom = (roomId: string, autoJoin: boolean = true): UseWebSocketRoomReturn => {
+  const globalWs = useGlobalWebSocket();
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
-  const [lastMessage, setLastMessage] = useState<string | null>(null);
+  const [isSubscribed, setIsSubscribed] = useState(false);
   
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Generate unique subscriber ID
+  const subscriberIdRef = useRef(`subscriber-${roomId}-${Math.random().toString(36).substr(2, 9)}`);
+  const subscriberId = subscriberIdRef.current;
 
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected');
-      return;
+  // Get current room data
+  const room = globalWs.rooms.get(roomId);
+  const subscriberCount = room ? room.subscribers.size : 0;
+
+  // Update local transactions when room transactions change
+  useEffect(() => {
+    if (isSubscribed) {
+      const roomTransactions = globalWs.getRoomTransactions(roomId);
+      setTransactions(roomTransactions);
     }
+  }, [globalWs.rooms, roomId, isSubscribed, globalWs]);
 
-    try {
-      setConnectionStatus('connecting');
-      wsRef.current = new WebSocket(url);
-
-      wsRef.current.onopen = () => {
-        console.log('✅ WebSocket connected to', url);
-        setConnectionStatus('connected');
-        
-        // Clear any pending reconnection attempts
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current);
-          reconnectTimeoutRef.current = null;
-        }
-      };
-
-      wsRef.current.onmessage = (event) => {
-        console.log('📡 Received message:', event.data);
-        setLastMessage(event.data);
-        
-        try {
-          const transactionData: TransactionData = JSON.parse(event.data);
-          setTransactions(prev => [transactionData, ...prev].slice(0, 100)); // Keep last 100 transactions
-        } catch (error) {
-          console.error('Failed to parse transaction data:', error);
-          console.log('Raw message:', event.data);
-        }
-      };
-
-      wsRef.current.onclose = (event) => {
-        console.log('🔌 WebSocket disconnected:', event.code, event.reason);
-        setConnectionStatus('disconnected');
-        
-        // Auto-reconnect after 3 seconds if not manually disconnected
-        if (event.code !== 1000) { // 1000 is normal closure
-          reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('🔄 Attempting to reconnect...');
-            connect();
-          }, 3000);
-        }
-      };
-
-      wsRef.current.onerror = (error) => {
-        console.error('❌ WebSocket error:', error);
-        setConnectionStatus('error');
-      };
-
-    } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
-      setConnectionStatus('error');
+  const joinRoom = useCallback(() => {
+    if (!isSubscribed) {
+      globalWs.joinRoom(roomId, subscriberId);
+      setIsSubscribed(true);
+      
+      // Get existing transactions for this room
+      const existingTransactions = globalWs.getRoomTransactions(roomId);
+      setTransactions(existingTransactions);
+      
+      console.log(`🚪 Joined room: ${roomId}`);
     }
-  }, [url]);
+  }, [globalWs, roomId, subscriberId, isSubscribed]);
 
-  const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+  const leaveRoom = useCallback(() => {
+    if (isSubscribed) {
+      globalWs.leaveRoom(roomId, subscriberId);
+      setIsSubscribed(false);
+      console.log(`🚪 Left room: ${roomId}`);
     }
-    
-    if (wsRef.current) {
-      wsRef.current.close(1000, 'Manual disconnect');
-      wsRef.current = null;
-    }
-    setConnectionStatus('disconnected');
-  }, []);
+  }, [globalWs, roomId, subscriberId, isSubscribed]);
 
   const clearTransactions = useCallback(() => {
     setTransactions([]);
   }, []);
 
-  // Auto-connect on mount
+  // Auto-join room on mount if autoJoin is true
   useEffect(() => {
-    connect();
-    
-    // Cleanup on unmount
+    if (autoJoin) {
+      joinRoom();
+    }
+
+    // Cleanup: leave room on unmount
     return () => {
-      disconnect();
+      leaveRoom();
     };
-  }, [connect, disconnect]);
+  }, [autoJoin, joinRoom, leaveRoom]);
 
   return {
     transactions,
-    connectionStatus,
-    lastMessage,
-    connect,
-    disconnect,
+    connectionStatus: globalWs.connectionStatus,
+    subscriberCount,
+    isSubscribed,
+    joinRoom,
+    leaveRoom,
     clearTransactions,
+  };
+};
+
+// Hook for getting all available rooms
+export const useAvailableRooms = () => {
+  const globalWs = useGlobalWebSocket();
+  
+  const availableRooms = Array.from(globalWs.rooms.entries()).map(([roomId, room]) => ({
+    id: roomId,
+    name: room.name,
+    transactionCount: room.transactions.length,
+    subscriberCount: room.subscribers.size,
+    isActive: room.subscribers.size > 0,
+    lastTransaction: room.transactions[0] || null,
+  }));
+
+  return {
+    rooms: availableRooms,
+    activeRooms: globalWs.activeRooms,
+    connectionStatus: globalWs.connectionStatus,
   };
 };
