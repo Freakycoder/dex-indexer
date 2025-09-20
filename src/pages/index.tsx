@@ -1,14 +1,35 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from '@/components/layout/SideBar';
 import { Header } from '@/components/layout/Header';
 import { FilterBar } from '@/components/layout/FilterBar';
 import { TokenTable } from '@/components/tokens/TokenTable';
 import { SearchModal } from '@/components/modals/SearchModal';
 import { Pagination } from '@/components/Pagination';
-import { mockTokens } from '@/data/mockData';
 import { SortConfig, Token } from '@/data/DataTypes';
+import { useGlobalWebSocket, TransactionData } from '@/context/WebsocketContext';
+
+// Inline styles for scrollbar
+const scrollbarStyles = `
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #374151;
+    border-radius: 9999px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+  }
+`;
 
 export default function Home() {
   const [activeRoute, setActiveRoute] = useState('new-pairs');
@@ -19,21 +40,101 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
+  const { getAllTransactions, connectionStatus, rooms } = useGlobalWebSocket();
+
+  // Transform WebSocket transactions into token format
+  const tokens: Token[] = useMemo(() => {
+    const tokenMap = new Map<string, Token>();
+    const allTransactions = getAllTransactions();
+
+    // Group transactions by token pair
+    allTransactions.forEach((transaction, index) => {
+      const tokenPair = transaction.token_pair;
+      
+      if (!tokenMap.has(tokenPair)) {
+        // Generate sparkline data from transactions
+        const sparklineData = Array.from({ length: 20 }, () => ({
+          value: Math.random() * 100
+        }));
+
+        tokenMap.set(tokenPair, {
+          id: tokenPair,
+          rank: tokenMap.size + 1,
+          chain: 'SOL',
+          chainColor: '#9945FF',
+          token: transaction.token_name || tokenPair.split('/')[0],
+          tokenSymbol: tokenPair.split('/')[0],
+          tokenPair: tokenPair,
+          tokenAddress: `${tokenPair.substring(0, 6)}...`,
+          price: transaction.token_price || 0,
+          priceChange: Math.floor(Math.random() * 100),
+          age: getAge(transaction.date),
+          txns: 1,
+          volume: transaction.usd || 0,
+          volumeFormatted: formatVolume(transaction.usd || 0),
+          makers: 1,
+          buys: transaction.purchase_type === 'Buy' ? 1 : 0,
+          sells: transaction.purchase_type === 'Sell' ? 1 : 0,
+          change5m: (Math.random() - 0.5) * 20,
+          change1h: (Math.random() - 0.5) * 50,
+          change6h: (Math.random() - 0.5) * 100,
+          change24h: (Math.random() - 0.5) * 200,
+          liquidity: `$${Math.floor(Math.random() * 500)}K`,
+          fdv: `$${Math.floor(Math.random() * 10)}M`,
+          sparklineData,
+          isPositive: transaction.purchase_type === 'Buy',
+          lastTransaction: transaction
+        });
+      } else {
+        const existingToken = tokenMap.get(tokenPair)!;
+        existingToken.txns += 1;
+        existingToken.volume += transaction.usd || 0;
+        existingToken.volumeFormatted = formatVolume(existingToken.volume);
+        if (transaction.purchase_type === 'Buy') {
+          existingToken.buys += 1;
+        } else {
+          existingToken.sells += 1;
+        }
+        existingToken.lastTransaction = transaction;
+        existingToken.price = transaction.token_price || existingToken.price;
+      }
+    });
+
+    return Array.from(tokenMap.values()).slice(0, 50); // Limit to 50 tokens
+  }, [getAllTransactions]);
+
+  // Helper functions
+  function getAge(dateString: string): string {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days}d`;
+    if (hours > 0) return `${hours}h`;
+    return 'now';
+  }
+
+  function formatVolume(volume: number): string {
+    if (volume >= 1000000) return `$${(volume / 1000000).toFixed(1)}M`;
+    if (volume >= 1000) return `$${(volume / 1000).toFixed(1)}K`;
+    return `$${volume.toFixed(0)}`;
+  }
+
   // Sorting logic
   const sortedTokens = useMemo(() => {
-    let sortableTokens = [...mockTokens];
+    if (!tokens.length) return [];
+    
+    let sortableTokens = [...tokens];
     if (sortConfig.key) {
       sortableTokens.sort((a, b) => {
         let aValue = a[sortConfig.key as keyof Token] as any;
         let bValue = b[sortConfig.key as keyof Token] as any;
         
-        if (typeof aValue === 'string' && aValue.includes('$')) {
-          aValue = parseFloat(aValue.replace(/[$,KMB]/g, '')) * 
-            (aValue.includes('B') ? 1000000000 : aValue.includes('M') ? 1000000 : aValue.includes('K') ? 1000 : 1);
-        }
-        if (typeof bValue === 'string' && bValue.includes('$')) {
-          bValue = parseFloat(bValue.replace(/[$,KMB]/g, '')) * 
-            (bValue.includes('B') ? 1000000000 : bValue.includes('M') ? 1000000 : bValue.includes('K') ? 1000 : 1);
+        if (sortConfig.key === 'volumeFormatted') {
+          aValue = a.volume;
+          bValue = b.volume;
         }
         
         if (aValue < bValue) {
@@ -46,7 +147,7 @@ export default function Home() {
       });
     }
     return sortableTokens;
-  }, [sortConfig]);
+  }, [tokens, sortConfig]);
 
   // Pagination
   const paginatedTokens = useMemo(() => {
@@ -54,7 +155,7 @@ export default function Home() {
     return sortedTokens.slice(startIndex, startIndex + itemsPerPage);
   }, [sortedTokens, currentPage, itemsPerPage]);
 
-  const totalPages = Math.ceil(mockTokens.length / itemsPerPage);
+  const totalPages = Math.ceil(tokens.length / itemsPerPage);
 
   const handleSort = (key: keyof Token) => {
     setSortConfig({
@@ -64,45 +165,66 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen bg-[#0b0e11] text-white overflow-hidden">
-      <Sidebar 
-        activeRoute={activeRoute} 
-        setActiveRoute={setActiveRoute}
-        onSearchClick={() => setSearchModalOpen(true)}
-      />
-      
-      <div className="flex-1 flex flex-col">
-        <Header />
-        <FilterBar 
-          timeFilter={timeFilter}
-          setTimeFilter={setTimeFilter}
-          trendingFilter={trendingFilter}
-          setTrendingFilter={setTrendingFilter}
+    <>
+      <style>{scrollbarStyles}</style>
+      <div className="flex h-screen bg-[#0b0e11] text-white overflow-hidden">
+        <Sidebar 
+          activeRoute={activeRoute} 
+          setActiveRoute={setActiveRoute}
+          onSearchClick={() => setSearchModalOpen(true)}
         />
         
-        <div className="flex-1 overflow-auto scrollbar-thin">
-          <TokenTable 
-            tokens={paginatedTokens}
-            sortConfig={sortConfig}
-            onSort={handleSort}
-            currentPage={currentPage}
-            itemsPerPage={itemsPerPage}
+        <div className="flex-1 flex flex-col">
+          <Header connectionStatus={connectionStatus} transactionCount={tokens.length} />
+          <FilterBar 
+            timeFilter={timeFilter}
+            setTimeFilter={setTimeFilter}
+            trendingFilter={trendingFilter}
+            setTrendingFilter={setTrendingFilter}
           />
+          
+          <div className="flex-1 overflow-auto scrollbar-thin">
+            {tokens.length > 0 ? (
+              <TokenTable 
+                tokens={paginatedTokens}
+                sortConfig={sortConfig}
+                onSort={handleSort}
+                currentPage={currentPage}
+                itemsPerPage={itemsPerPage}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <div className="text-gray-500 text-lg mb-2">
+                    {connectionStatus === 'connected' ? 'Waiting for transactions...' : 'Connecting to WebSocket...'}
+                  </div>
+                  <div className="text-gray-600 text-sm">
+                    Status: <span className={connectionStatus === 'connected' ? 'text-green-500' : 'text-yellow-500'}>
+                      {connectionStatus}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {tokens.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              itemsPerPage={itemsPerPage}
+              totalItems={tokens.length}
+              onPageChange={setCurrentPage}
+            />
+          )}
         </div>
-        
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          itemsPerPage={itemsPerPage}
-          totalItems={mockTokens.length}
-          onPageChange={setCurrentPage}
+
+        <SearchModal 
+          isOpen={searchModalOpen} 
+          onClose={() => setSearchModalOpen(false)} 
+          tokens={tokens}
         />
       </div>
-
-      <SearchModal 
-        isOpen={searchModalOpen} 
-        onClose={() => setSearchModalOpen(false)} 
-      />
-    </div>
+    </>
   );
 }

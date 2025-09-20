@@ -4,7 +4,13 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head />
-      <body className="antialiased">
+      <body style={{ 
+        margin: 0, 
+        padding: 0, 
+        backgroundColor: '#0b0e11',
+        color: '#ffffff',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+      }}>
         <Main />
         <NextScript />
       </body>

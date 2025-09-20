@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Token, SortConfig } from '@/lib/types';
+import { Token, SortConfig } from '@/data/DataTypes';
 import { TokenRow } from './TokenRow';
 import { Info } from 'lucide-react';
 import { cn } from '@/lib/utils';

@@ -1,17 +1,21 @@
 export interface Token {
+  id: string;
   rank: number;
   chain: string;
   chainColor: string;
   token: string;
   tokenSymbol: string;
+  tokenPair: string;
   tokenAddress?: string;
-  tokenVersion?: string;
   price: number;
   priceChange?: number;
   age: string;
   txns: number;
-  volume: string;
+  volume: number;
+  volumeFormatted: string;
   makers: number;
+  buys: number;
+  sells: number;
   change5m: number;
   change1h: number;
   change6h: number;
@@ -20,6 +24,7 @@ export interface Token {
   fdv?: string;
   sparklineData: Array<{ value: number }>;
   isPositive: boolean;
+  lastTransaction?: any;
 }
 
 export interface SortConfig {
