@@ -1,9 +1,11 @@
 use axum::{response::Json, routing::get, Router};
 use serde_json::{json, Value};
 use shared::{redis::{queue_manager::QueueManager, worker::QueueWorker}, websocket::ws_manager::WebsocketManager};
+use dotenvy::dotenv;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    dotenv().ok();
     println!("🚀 Starting API server...");
 
     let ws_manager = WebsocketManager::new();
