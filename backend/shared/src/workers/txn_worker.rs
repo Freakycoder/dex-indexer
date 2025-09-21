@@ -1,11 +1,12 @@
 use crate::{
-    redis::{price_service::PriceService, token_symbol_manager::TokenSymbolManager},
+    redis::{token_symbol_manager::TokenSymbolManager},
     types::{
         grpc::{CustomTokenBalance, TransactionMetadata},
         worker::{StructeredTransaction, Type},
     },
     websocket::ws_manager::WebsocketManager,
 };
+use crate::services::price_service::PriceService;
 use crate::queues::{swap_txn_manager::SwapTxnQueueManager, structured_txn_manager::StructeredTxnQueueManager};
 use std::{collections::HashMap, time::Duration};
 use tokio::time::sleep;
