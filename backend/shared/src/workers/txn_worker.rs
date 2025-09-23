@@ -223,7 +223,7 @@ impl TxnWorker {
             Some(StructeredTransaction {
                 date: chrono::Utc::now(),
                 purchase_type,
-                usd: Some(usd_value),
+                usd_value: Some(usd_value),
                 token_quantity: token_amount_change,
                 token_price,
                 token_pair,
@@ -235,7 +235,7 @@ impl TxnWorker {
             Some(StructeredTransaction {
                 date: chrono::Utc::now(),
                 purchase_type,
-                usd: None,
+                usd_value: None,
                 token_quantity: token_amount_change,
                 token_price: 0.0,
                 token_pair,
