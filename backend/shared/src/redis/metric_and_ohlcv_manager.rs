@@ -5,7 +5,7 @@ use redis::{AsyncCommands, Client, RedisError, RedisResult};
 use serde::{Deserialize, Serialize};
 use crate::types::{worker::{StructeredTransaction, Type}};
 
-#[derive(Debug,Serialize,Deserialize)]
+#[derive(Debug,Serialize,Deserialize, Clone)]
 pub struct PeriodStats{
     pub txns : u64,
     pub volume : f64,
@@ -18,7 +18,7 @@ pub struct PeriodStats{
     pub sellers : usize
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TimeFrame {
     FiveMins,
     OneHour,
