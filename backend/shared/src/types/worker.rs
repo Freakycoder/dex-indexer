@@ -1,11 +1,11 @@
 use sea_orm::prelude::DateTimeUtc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize,Deserialize)]
 pub struct StructeredTransaction {
     pub date: DateTimeUtc,
     pub purchase_type: Type,
-    pub usd: Option<f64>,
+    pub usd_value: Option<f64>,
     pub token_quantity: f64,
     pub token_price: f64,
     pub token_pair : String,
@@ -14,7 +14,7 @@ pub struct StructeredTransaction {
     pub dex_type: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Type {
     Buy,
     Sell,
