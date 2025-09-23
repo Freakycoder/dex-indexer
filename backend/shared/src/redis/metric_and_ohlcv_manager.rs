@@ -1,24 +1,9 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use chrono::{Utc};
 use redis::{AsyncCommands, Client, RedisError, RedisResult};
 use serde::{Deserialize, Serialize};
 use crate::types::{worker::{StructeredTransaction, Type}};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MetricInfo {
-    pub token_pair : String,
-    pub current_price_usd: f64,
-    pub relative_price_sol: f64,
-    pub fdv : f64,
-    pub mkt_cap : f64,
-    pub price_chane_5m : f64,
-    pub price_chane_1h : f64,
-    pub price_chane_6h : f64,
-    pub price_chane_24h : f64,
-    pub periodic_stats : PeriodStats,
-    pub updated_at : DateTime<Utc>
-}
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct PeriodStats{
