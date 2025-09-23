@@ -16,7 +16,7 @@ impl MetricsWorker {
     }
 
     pub async fn start_processing(&self) {
-        println!("Worker started and waiting for messages...");
+        println!("Metrics Worker started and waiting for messages...");
         loop {
             match self.structured_txn_queue.dequeue_message().await {
                 Ok(Some(txn_message)) => {
