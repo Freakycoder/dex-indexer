@@ -1,16 +1,16 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use redis::{AsyncCommands, Client, RedisResult};
+use serde::{Deserialize, Serialize};
 use tokio::time::interval;
 
 use crate::redis::metric_and_ohlcv_manager::{MetricOHLCVManager, PeriodStats, TimeFrame};
 
-#[derive(Debug)]
+#[derive(Debug , Serialize, Deserialize, Clone)]
 pub struct PeriodStatsUpdate{
-    pub price_change_5m : Option<f64>,
-    pub price_change_1h : Option<f64>,
-    pub price_change_6h : Option<f64>,
-    pub price_change_24h : Option<f64>,
+    pub token_pair : String,
+    pub timeframe : TimeFrame,
+    pub price_change : f64,
     pub period_stats : Option<PeriodStats>
 }
 
@@ -22,7 +22,7 @@ pub struct MetricsService {
 
 impl MetricsService {
     pub fn new() -> Result<Self, anyhow::Error> {
-        let metrics_manager = MetricOHLCVManager::new()?;
+        let metrics_manager = MetricOHLCVManager::new().expect("Error creating metric manager");
         let redis_url = "redis://localhost:6379";
         let redis_client = Client::open(redis_url).map_err(|e| {
             println!("Couldn't initialize a redis client : {}", e);
@@ -64,7 +64,7 @@ impl MetricsService {
         let mut interval = interval(Duration::from_secs(300));
         loop {
             interval.tick().await;
-            println!("⏰ Running 5-minute metrics update...");
+            println!("⏰ Running 5m metrics update...");
             if let Ok(token_pair_list) = self.get_active_token_pairs().await {
                 for token in token_pair_list {
                     let current_price  = self.metrics_manager.get_current_price(&token).await.expect("Error getting current price from redis");
@@ -74,10 +74,9 @@ impl MetricsService {
                                 println!("got historical price for : {}", token);
                                 let percentage_change = (current_price - price) / price;
                                 let period_stats_update = PeriodStatsUpdate{
-                                    price_change_5m : Some(percentage_change),
-                                    price_change_1h : None,
-                                    price_change_6h : None,
-                                    price_change_24h : None,
+                                    token_pair : token,
+                                    timeframe : TimeFrame::FiveMins,
+                                    price_change : percentage_change,
                                     period_stats : Some(PeriodStats{
                                         txns : token_metrics.txns,
                                         volume : token_metrics.volume,
@@ -105,10 +104,10 @@ impl MetricsService {
         }
     }
     async fn start_1h_scheduler(&self) {
-        let mut interval = interval(Duration::from_secs(300));
+        let mut interval = interval(Duration::from_secs(3600));
         loop {
             interval.tick().await;
-            println!("⏰ Running 5-minute metrics update...");
+            println!("⏰ Running 1hr metrics update...");
             if let Ok(token_pair_list) = self.get_active_token_pairs().await {
                 for token in token_pair_list {
                     let current_price  = self.metrics_manager.get_current_price(&token).await.expect("Error getting current price from redis");
@@ -118,10 +117,9 @@ impl MetricsService {
                                 println!("got historical price for : {}", token);
                                 let percentage_change = (current_price - price) / price;
                                 let period_stats_update = PeriodStatsUpdate{
-                                    price_change_5m : Some(percentage_change),
-                                    price_change_1h : None,
-                                    price_change_6h : None,
-                                    price_change_24h : None,
+                                    token_pair : token,
+                                    timeframe : TimeFrame::OneHour,
+                                    price_change : percentage_change,
                                     period_stats : Some(PeriodStats{
                                         txns : token_metrics.txns,
                                         volume : token_metrics.volume,
@@ -149,10 +147,10 @@ impl MetricsService {
         }
     }
     async fn start_6h_scheduler(&self) {
-        let mut interval = interval(Duration::from_secs(300));
+        let mut interval = interval(Duration::from_secs(21600));
         loop {
             interval.tick().await;
-            println!("⏰ Running 5-minute metrics update...");
+            println!("⏰ Running 6hr metrics update...");
             if let Ok(token_pair_list) = self.get_active_token_pairs().await {
                 for token in token_pair_list {
                     let current_price  = self.metrics_manager.get_current_price(&token).await.expect("Error getting current price from redis");
@@ -162,10 +160,9 @@ impl MetricsService {
                                 println!("got historical price for : {}", token);
                                 let percentage_change = (current_price - price) / price;
                                 let period_stats_update = PeriodStatsUpdate{
-                                    price_change_5m : Some(percentage_change),
-                                    price_change_1h : None,
-                                    price_change_6h : None,
-                                    price_change_24h : None,
+                                   token_pair : token,
+                                    timeframe : TimeFrame::SixHours,
+                                    price_change : percentage_change,
                                     period_stats : Some(PeriodStats{
                                         txns : token_metrics.txns,
                                         volume : token_metrics.volume,
@@ -193,10 +190,10 @@ impl MetricsService {
         }
     }
     async fn start_24h_scheduler(&self) {
-        let mut interval = interval(Duration::from_secs(300));
+        let mut interval = interval(Duration::from_secs(86400));
         loop {
             interval.tick().await;
-            println!("⏰ Running 5-minute metrics update...");
+            println!("⏰ Running 24hr metrics update...");
             if let Ok(token_pair_list) = self.get_active_token_pairs().await {
                 for token in token_pair_list {
                     let current_price  = self.metrics_manager.get_current_price(&token).await.expect("Error getting current price from redis");
@@ -206,10 +203,9 @@ impl MetricsService {
                                 println!("got historical price for : {}", token);
                                 let percentage_change = (current_price - price) / price;
                                 let period_stats_update = PeriodStatsUpdate{
-                                    price_change_5m : Some(percentage_change),
-                                    price_change_1h : None,
-                                    price_change_6h : None,
-                                    price_change_24h : None,
+                                    token_pair : token,
+                                    timeframe : TimeFrame::TwentyFourHours,
+                                    price_change : percentage_change,
                                     period_stats : Some(PeriodStats{
                                         txns : token_metrics.txns,
                                         volume : token_metrics.volume,
