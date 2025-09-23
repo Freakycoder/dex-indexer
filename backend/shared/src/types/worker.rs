@@ -1,7 +1,7 @@
 use sea_orm::prelude::DateTimeUtc;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize,Deserialize)]
+#[derive(Debug, Serialize,Deserialize, Clone)]
 pub struct StructeredTransaction {
     pub date: DateTimeUtc,
     pub purchase_type: Type,
@@ -14,7 +14,7 @@ pub struct StructeredTransaction {
     pub dex_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Type {
     Buy,
     Sell,
