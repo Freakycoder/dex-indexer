@@ -23,10 +23,10 @@ impl MetricsWorker {
                     println!("Got txn messsage from the queue");
                     println!("Txn Metadata : {:?}", txn_message);
                     let token_pair_clone = txn_message.token_pair.clone();
-                    self.metric_manager.update_current_price(txn_message.token_pair, txn_message.token_price).await;
+                    let _ = self.metric_manager.update_current_price(txn_message.token_pair, txn_message.token_price).await;
                     let market_cap = fastrand::i32(100_000..=1_000_000);
                     let fdv = fastrand::i32(100_000..=1_000_000);
-                    self.metric_manager.update_market_data(token_pair_clone, market_cap, fdv).await;
+                    let _ = self.metric_manager.update_market_data(token_pair_clone, market_cap, fdv).await;
                 }
                 Ok(None) => {
                     println!("Queue empty, no message recieved");
