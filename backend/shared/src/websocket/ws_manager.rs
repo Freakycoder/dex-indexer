@@ -11,6 +11,8 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use std::collections::HashMap;
 
+use crate::{redis::pubsub_manager::{PubSubManager, PubSubMessage}, types::worker::StructeredTransaction};
+
 type WebSocketSender = SplitSink<WebSocket, Message>;
 
 // Global shared state for WebSocket connections
@@ -23,14 +25,71 @@ lazy_static::lazy_static! {
 #[derive(Clone, Debug)]
 pub struct WebsocketManager {
     client_count: Arc<Mutex<usize>>,
+    pubsub_manager : Option<PubSubManager> //kept it option bcoz its fine to start websocket without creating pubsub
 }
 
 impl WebsocketManager {
     pub fn new() -> Self {
-        Self {
+        let pubsub_manager = match PubSubManager::new(){
+            Ok(manager) => {Some(manager)},
+            Err(e) => {
+                println!("Error initializing the pubsub manager : {}",e);
+                None
+            }
+        };
+        let pubsub_clone = pubsub_manager.clone();
+
+        let instance= Self {
             client_count: Arc::new(Mutex::new(0)),
+            pubsub_manager
+        };
+
+        if let Some(_) = &instance.pubsub_manager{
+            tokio::spawn(async move{
+                if let Some(pubsub) = pubsub_clone {
+                    if let Err(e) = Self::start_pubsub_listener(pubsub).await{
+                        println!("Pubsub listener error : {}",e);
+                    }
+                }
+            });
         }
+
+        instance
     }
+
+    async fn start_pubsub_listener( pubsub : PubSubManager) -> Result<(), anyhow::Error>{
+        println!("Starting pubsub for websocket broadcast...");
+        let mut receiver = pubsub.subscribe_to_channels().await?;
+        while let Some(msg) = receiver.recv().await {
+            match msg {
+                    PubSubMessage::Transaction(txn) => {
+                        match serde_json::to_string(&txn) {
+                            Ok(msg) => {
+                                Self::push(msg)
+                            }
+                            Err(e) => {
+                                println!("Failed to serialize the transaction from mpsc to send through socket : {}",e);
+                                continue;
+                            }
+                        };
+                    }
+                    PubSubMessage::PriceMetrics(stats) => {
+                         match serde_json::to_string(&stats) {
+                            Ok(stats) => {
+                                Self::push(stats)
+                            }
+                            Err(e) => {
+                                println!("Failed to serialize the period stats from mpsc to send through socket : {}",e);
+                                continue;
+                            }
+                        };
+                    }
+            }
+        }
+    
+    Ok(())
+    }
+
 
     pub fn get_route(&self) -> Router {
         Router::new()
@@ -38,7 +97,7 @@ impl WebsocketManager {
             .with_state(self.clone())
     }
 
-    pub async fn push(&self, msg: String) {
+    pub async fn push(msg: String) {
         let connections = WEBSOCKET_CONNECTIONS.read().await;
         let count = connections.len();
         
