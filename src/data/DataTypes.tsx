@@ -4,9 +4,8 @@ export interface Token {
   chain: string;
   chainColor: string;
   token: string;
-  tokenSymbol: string;
+  tokenName: string;
   tokenPair: string;
-  tokenAddress?: string;
   price: number;
   priceChange?: number;
   age: string;

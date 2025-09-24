@@ -1,5 +1,3 @@
-// src/hooks/useWebSocketRoom.tsx
-
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useGlobalWebSocket, TransactionData } from '../context/WebsocketContext';
 
