@@ -28,7 +28,7 @@ pub enum TimeFrame {
 
 #[derive(Debug)]
 pub struct MetricOHLCVManager {
-    redis_client: Client,
+    pub redis_client: Client,
 }
 
 impl MetricOHLCVManager {
@@ -49,7 +49,7 @@ impl MetricOHLCVManager {
         let price_key = format!("token:{}:current-price" , token_pair);
         let _: () = conn.set(price_key, price_usd).await?;
 
-        let history_key = format!("token:{}:history-price", price_usd);
+        let history_key = format!("token:{}:history-price", token_pair);
         let history_price_entry = format!("{}:{}", Utc::now().timestamp(), price_usd);
 
         conn.lpush(&history_key, history_price_entry).await?;
@@ -74,18 +74,22 @@ impl MetricOHLCVManager {
         let stats_key = format!("token:{}:stats", txn.token_pair);
         let is_buy = matches!(txn.purchase_type, Type::Buy);
         let buyers_key = format!("token:{}:buyers", txn.token_pair);
-        let sellers_key = format!("token:{}:makers", txn.token_pair);
+        let sellers_key = format!("token:{}:sellers", txn.token_pair);
 
         // calculate volume ( buy vol + sell vol), txns (buys + sells) and makers (buyers + sellers) from the following.
         if is_buy{
             conn.hincr(&stats_key, "buys", 1).await?;
-            conn.hincr(&stats_key, "buy vol", txn.usd_value).await?;
+            if let Some(usd_value) = txn.usd_value {
+                conn.hincr(&stats_key, "buy_volume", usd_value).await?;
+            }            
             conn.sadd(&buyers_key, txn.owner).await?;
 
         }
         else {
             conn.hincr(&stats_key, "sells", 1).await?;
-            conn.hincr(&stats_key, "sell vol", txn.usd_value).await?;
+            if let Some(usd_value) = txn.usd_value {
+                conn.hincr(&stats_key, "sell_volume", usd_value).await?;
+            }            
             conn.sadd(&sellers_key, txn.owner).await?;
         }
         conn.expire(stats_key, 86400).await?;
@@ -136,7 +140,8 @@ impl MetricOHLCVManager {
 
     pub async fn get_current_price(&self, token_pair: &str) -> RedisResult<f64>{
         let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
-        let current_price : f64 = conn.get(token_pair).await?; 
+        let price_key = format!("token:{}:current-price", token_pair);
+        let current_price : f64 = conn.get(price_key).await?; 
         Ok(current_price)
     }
 
