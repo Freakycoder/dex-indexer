@@ -1,10 +1,9 @@
 use crate::{
-    redis::{token_symbol_manager::TokenSymbolManager},
+    redis::{pubsub_manager::PubSubManager, token_symbol_manager::TokenSymbolManager},
     types::{
         grpc::{CustomTokenBalance, TransactionMetadata},
         worker::{StructeredTransaction, Type},
     },
-    websocket::ws_manager::WebsocketManager,
 };
 use crate::services::price_service::PriceService;
 use crate::queues::{swap_txn_manager::SwapTxnQueueManager, structured_txn_manager::StructeredTxnQueueManager};
@@ -24,18 +23,19 @@ struct SwapAnalysis {
 pub struct TxnWorker {
     swap_queue: SwapTxnQueueManager,
     structered_txn_queue : StructeredTxnQueueManager,
-    websocket: WebsocketManager,
+    pubsub_manager : PubSubManager,
     price_service: PriceService,
 }
 const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
 impl TxnWorker {
-    pub fn new(swap_queue: SwapTxnQueueManager, websocket: WebsocketManager, structered_txn_queue : StructeredTxnQueueManager) -> Self {
+    pub fn new(swap_queue: SwapTxnQueueManager, structered_txn_queue : StructeredTxnQueueManager) -> Self {
         let token_manager = TokenSymbolManager::new().expect("Error creating a token symbol manager");
+        let pubsub_manager = PubSubManager::new().expect("Error creating pubsub manager");
         Self {
             swap_queue,
             structered_txn_queue,
-            websocket,
+            pubsub_manager,
             price_service: PriceService::new(token_manager),
         }
     }
@@ -65,19 +65,12 @@ impl TxnWorker {
             if message.contains("SwapV2") || message.contains("SwapRaydiumV4") {
                 println!("✅ Detected a Raydium swap");
 
-                if let Some(structured_txn) = self.transform_swap(txn_meta.clone()).await {
-                    match serde_json::to_string(&structured_txn) {
-                        Ok(txn_json) => {
-                            self.websocket.push(txn_json).await;
-                            let _ = self.structered_txn_queue.enqueue_message(structured_txn).await;
-                        }
-                        Err(e) => {
-                            println!("Error converting structured txn to string: {}", e);
-                        }
-                    }
+                if let Some(structured_txn) = self.transform_swap(&txn_meta).await {
+                    self.pubsub_manager.publish_transaction(structured_txn.clone()).await;
+                    self.structered_txn_queue.enqueue_message(structured_txn).await;
                 }
-                break; // Found a swap, no need to check other messages
             }
+            continue;
         }
     }
 
@@ -160,7 +153,7 @@ impl TxnWorker {
         })
     }
 
-    async fn transform_swap(&self, txn_meta: TransactionMetadata) -> Option<StructeredTransaction> {
+    async fn transform_swap(&self, txn_meta: &TransactionMetadata) -> Option<StructeredTransaction> {
         let pre_balance_array = &txn_meta.pre_token_balances;
         let post_balance_array = &txn_meta.post_token_balances;
 
