@@ -1,10 +1,9 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
-
 use redis::{AsyncCommands, Client, RedisResult};
 use serde::{Deserialize, Serialize};
 use tokio::time::interval;
 
-use crate::redis::metric_and_ohlcv_manager::{MetricOHLCVManager, PeriodStats, TimeFrame};
+use crate::redis::{metric_and_ohlcv_manager::{MetricOHLCVManager, PeriodStats, TimeFrame}, pubsub_manager::PubSubManager};
 
 #[derive(Debug , Serialize, Deserialize, Clone)]
 pub struct PeriodStatsUpdate{
@@ -18,11 +17,14 @@ pub struct PeriodStatsUpdate{
 pub struct MetricsService {
     pub metrics_manager: MetricOHLCVManager,
     pub redis_client: Client,
+    pub pubsub_manager : PubSubManager
 }
 
 impl MetricsService {
     pub fn new() -> Result<Self, anyhow::Error> {
         let metrics_manager = MetricOHLCVManager::new().expect("Error creating metric manager");
+        let pubsub_manager = PubSubManager::new().expect("Error creating pubsub manager");
+
         let redis_url = "redis://localhost:6379";
         let redis_client = Client::open(redis_url).map_err(|e| {
             println!("Couldn't initialize a redis client : {}", e);
@@ -31,6 +33,7 @@ impl MetricsService {
         Ok(Self {
             metrics_manager,
             redis_client,
+            pubsub_manager
         })
     }
 
@@ -89,7 +92,7 @@ impl MetricsService {
                                         sellers : token_metrics.sellers
                                     })
                                 };
-                                // send through pubsub
+                                let _ = self.pubsub_manager.publish_price_and_metrics_update(period_stats_update).await;
                             }
                             Ok(None) => {
                                 println!("Recieved no historical price for : {}", token);
@@ -132,7 +135,7 @@ impl MetricsService {
                                         sellers : token_metrics.sellers
                                     })
                                 };
-                                // send through pubsub
+                                let _ = self.pubsub_manager.publish_price_and_metrics_update(period_stats_update).await;
                             }
                             Ok(None) => {
                                 println!("Recieved no historical price for : {}", token);
@@ -175,7 +178,7 @@ impl MetricsService {
                                         sellers : token_metrics.sellers
                                     })
                                 };
-                                // send through pubsub
+                                let _ = self.pubsub_manager.publish_price_and_metrics_update(period_stats_update).await;
                             }
                             Ok(None) => {
                                 println!("Recieved no historical price for : {}", token);
@@ -218,7 +221,7 @@ impl MetricsService {
                                         sellers : token_metrics.sellers
                                     })
                                 };
-                                // send through pubsub
+                                let _ = self.pubsub_manager.publish_price_and_metrics_update(period_stats_update).await;
                             }
                             Ok(None) => {
                                 println!("Recieved no historical price for : {}", token);
