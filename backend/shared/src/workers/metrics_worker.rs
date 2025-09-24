@@ -1,18 +1,20 @@
 use std::time::Duration;
 use tokio::time::sleep;
-use crate::{queues::structured_txn_manager::StructeredTxnQueueManager, redis::metric_and_ohlcv_manager::MetricOHLCVManager};
+use crate::{queues::structured_txn_manager::StructeredTxnQueueManager, redis::{metric_and_ohlcv_manager::MetricOHLCVManager, pubsub_manager::PubSubManager}};
 
 #[derive(Debug)]
 pub struct MetricsWorker{
     pub structured_txn_queue : StructeredTxnQueueManager,
-    pub metric_manager : MetricOHLCVManager
+    pub metric_manager : MetricOHLCVManager,
+    pub pubsub_manager : PubSubManager
 }
 
 impl MetricsWorker {
     pub fn new(structured_txn_queue : StructeredTxnQueueManager) -> Result<Self, anyhow::Error>{
 
         let metric_manager = MetricOHLCVManager::new()?;
-        Ok(Self { structured_txn_queue, metric_manager })
+        let pubsub_manager = PubSubManager::new().expect("Error creating pub sub manager");
+        Ok(Self { structured_txn_queue, metric_manager, pubsub_manager })
     }
 
     pub async fn start_processing(&self) {
@@ -23,10 +25,17 @@ impl MetricsWorker {
                     println!("Got txn messsage from the queue");
                     println!("Txn Metadata : {:?}", txn_message);
                     let token_pair_clone = txn_message.token_pair.clone();
-                    let _ = self.metric_manager.update_current_price(txn_message.token_pair, txn_message.token_price).await;
+                    if let Err(e) = self.metric_manager.update_current_price(txn_message.token_pair.clone(), txn_message.token_price).await{
+                        println!("Error occured while updating current price to redis : {}",e)
+                    };
+                    if let Err(e) = self.pubsub_manager.publish_current_price(txn_message.token_price, txn_message.token_pair).await{
+                        println!("Error occured while publishing current price : {}",e)
+                    };
                     let market_cap = fastrand::i32(100_000..=1_000_000);
                     let fdv = fastrand::i32(100_000..=1_000_000);
-                    let _ = self.metric_manager.update_market_data(token_pair_clone, market_cap, fdv).await;
+                    if let Err(e) = self.metric_manager.update_market_data(token_pair_clone, market_cap, fdv).await{
+                        println!("Error occured while updating token metrics to redis : {}",e)
+                    };
                 }
                 Ok(None) => {
                     println!("Queue empty, no message recieved");
