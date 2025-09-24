@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use std::collections::HashMap;
 
-use crate::{redis::pubsub_manager::{PubSubManager, PubSubMessage}, types::worker::StructeredTransaction};
+use crate::{redis::pubsub_manager::{PubSubManager, PubSubMessage}};
 
 type WebSocketSender = SplitSink<WebSocket, Message>;
 
@@ -65,7 +65,7 @@ impl WebsocketManager {
                     PubSubMessage::Transaction(txn) => {
                         match serde_json::to_string(&txn) {
                             Ok(msg) => {
-                                Self::push(msg)
+                                Self::push(msg).await
                             }
                             Err(e) => {
                                 println!("Failed to serialize the transaction from mpsc to send through socket : {}",e);
@@ -76,7 +76,7 @@ impl WebsocketManager {
                     PubSubMessage::PriceMetrics(stats) => {
                          match serde_json::to_string(&stats) {
                             Ok(stats) => {
-                                Self::push(stats)
+                                Self::push(stats).await
                             }
                             Err(e) => {
                                 println!("Failed to serialize the period stats from mpsc to send through socket : {}",e);
