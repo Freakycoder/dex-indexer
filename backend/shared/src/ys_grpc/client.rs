@@ -1,4 +1,4 @@
-use crate::redis::queue_manager::QueueManager;
+use crate::queues::swap_txn_manager::SwapTxnQueueManager;
 use futures::{SinkExt, StreamExt}; // used for something that already implement the sink and stream trait. its like an interface for them, which provides them extra methods like .send().await or .next().await() or .map() or .filter()
 use std::collections::HashMap;
 use yellowstone_grpc_client::{ClientTlsConfig, GeyserGrpcClient};
@@ -77,7 +77,7 @@ impl GrpcClient {
         let (mut sink, mut stream) = client.subscribe().await?; //stream is nothing but the data (multiple items) you get from a source asynchronously.
 
         sink.send(subcription).await?;
-        let queue = QueueManager::new().expect("error initializing queue");
+        let queue = SwapTxnQueueManager::new().expect("error initializing queue");
 
         println!("Listening for transactions from grpc...");
 
