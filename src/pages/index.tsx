@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/layout/SideBar';
 import { Header } from '@/components/layout/Header';
 import { FilterBar } from '@/components/layout/FilterBar';
 import { TokenTable } from '@/components/tokens/TokenTable';
+import { TokenDetailView } from '@/components/tokens/TokenDetailView';
 import { SearchModal } from '@/components/modals/SearchModal';
 import { Pagination } from '@/components/Pagination';
 import { SortConfig, Token } from '@/data/DataTypes';
@@ -38,6 +39,7 @@ export default function Home() {
   const [trendingFilter, setTrendingFilter] = useState(true);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'desc' });
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedToken, setSelectedToken] = useState<Token | null>(null);
   const itemsPerPage = 15;
 
   const { getAllTransactions, connectionStatus, rooms } = useGlobalWebSocket();
@@ -163,6 +165,19 @@ export default function Home() {
     });
   };
 
+  const handleTokenClick = (token: Token) => {
+    setSelectedToken(token);
+  };
+
+  const handleCloseTokenDetail = () => {
+    setSelectedToken(null);
+  };
+
+  // Reset to first page when tokens change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [tokens.length]);
+
   return (
     <>
       <style>{scrollbarStyles}</style>
@@ -174,47 +189,58 @@ export default function Home() {
         />
         
         <div className="flex-1 flex flex-col">
-          <Header connectionStatus={connectionStatus} transactionCount={tokens.length} />
-          <FilterBar 
-            timeFilter={timeFilter}
-            setTimeFilter={setTimeFilter}
-            trendingFilter={trendingFilter}
-            setTrendingFilter={setTrendingFilter}
-          />
-          
-          <div className="flex-1 overflow-auto scrollbar-thin">
-            {tokens.length > 0 ? (
-              <TokenTable 
-                tokens={paginatedTokens}
-                sortConfig={sortConfig}
-                onSort={handleSort}
-                currentPage={currentPage}
-                itemsPerPage={itemsPerPage}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <div className="text-gray-500 text-lg mb-2">
-                    {connectionStatus === 'connected' ? 'Waiting for transactions...' : 'Connecting to WebSocket...'}
-                  </div>
-                  <div className="text-gray-600 text-sm">
-                    Status: <span className={connectionStatus === 'connected' ? 'text-green-500' : 'text-yellow-500'}>
-                      {connectionStatus}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          {tokens.length > 0 && (
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              itemsPerPage={itemsPerPage}
-              totalItems={tokens.length}
-              onPageChange={setCurrentPage}
+          {/* Conditional Rendering: Token Detail or Main View */}
+          {selectedToken ? (
+            <TokenDetailView 
+              token={selectedToken} 
+              onClose={handleCloseTokenDetail} 
             />
+          ) : (
+            <>
+              <Header connectionStatus={connectionStatus} transactionCount={tokens.length} />
+              <FilterBar 
+                timeFilter={timeFilter}
+                setTimeFilter={setTimeFilter}
+                trendingFilter={trendingFilter}
+                setTrendingFilter={setTrendingFilter}
+              />
+              
+              <div className="flex-1 overflow-auto scrollbar-thin">
+                {tokens.length > 0 ? (
+                  <TokenTable 
+                    tokens={paginatedTokens}
+                    sortConfig={sortConfig}
+                    onSort={handleSort}
+                    onTokenClick={handleTokenClick}
+                    currentPage={currentPage}
+                    itemsPerPage={itemsPerPage}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <div className="text-gray-500 text-lg mb-2">
+                        {connectionStatus === 'connected' ? 'Waiting for transactions...' : 'Connecting to WebSocket...'}
+                      </div>
+                      <div className="text-gray-600 text-sm">
+                        Status: <span className={connectionStatus === 'connected' ? 'text-green-500' : 'text-yellow-500'}>
+                          {connectionStatus}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {tokens.length > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  itemsPerPage={itemsPerPage}
+                  totalItems={tokens.length}
+                  onPageChange={setCurrentPage}
+                />
+              )}
+            </>
           )}
         </div>
 
