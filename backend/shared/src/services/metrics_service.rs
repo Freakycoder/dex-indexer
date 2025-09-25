@@ -29,7 +29,7 @@ impl MetricsService {
         let redis_client = Client::open(redis_url).map_err(|e| {
             println!("Couldn't initialize a redis client : {}", e);
             e
-        })?;
+        })?; 
         Ok(Self {
             metrics_manager,
             redis_client,
@@ -42,25 +42,27 @@ impl MetricsService {
 
         let scheduler_5m = Arc::clone(&self);
         tokio::spawn(async move {
+            println!("Started 5 min scheduler");
             scheduler_5m.start_5m_scheduler().await;
         });
 
         let scheduler_1h = Arc::clone(&self);
         tokio::spawn(async move {
+            println!("Started 1 hour scheduler");
             scheduler_1h.start_1h_scheduler().await;
         });
 
         let scheduler_6h = Arc::clone(&self);
         tokio::spawn(async move {
+            println!("Started 6 hours scheduler");
             scheduler_6h.start_6h_scheduler().await;
         });
 
         let scheduler_24h = Arc::clone(&self);
         tokio::spawn(async move {
+            println!("Started 24 hours scheduler");
             scheduler_24h.start_24h_scheduler().await;
         });
-
-        println!(" All metrics schedulers started");
     }
 
     async fn start_5m_scheduler(&self) {
