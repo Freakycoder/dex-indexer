@@ -9,6 +9,7 @@ interface TokenTableProps {
   tokens: Token[];
   sortConfig: SortConfig;
   onSort: (key: keyof Token) => void;
+  onTokenClick: (token: Token) => void;
   currentPage: number;
   itemsPerPage: number;
 }
@@ -17,6 +18,7 @@ export const TokenTable: React.FC<TokenTableProps> = ({
   tokens, 
   sortConfig, 
   onSort,
+  onTokenClick,
   currentPage,
   itemsPerPage
 }) => {
@@ -108,7 +110,8 @@ export const TokenTable: React.FC<TokenTableProps> = ({
           <TokenRow 
             key={`${token.token}-${index}`} 
             token={token} 
-            index={(currentPage - 1) * itemsPerPage + index} 
+            index={(currentPage - 1) * itemsPerPage + index}
+            onTokenClick={onTokenClick}
           />
         ))}
       </tbody>

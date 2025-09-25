@@ -9,9 +9,10 @@ import { formatPercentage, getPercentageColor, formatPrice, formatNumber } from 
 interface TokenRowProps {
   token: Token;
   index: number;
+  onTokenClick: (token: Token) => void;
 }
 
-export const TokenRow: React.FC<TokenRowProps> = ({ token, index }) => {
+export const TokenRow: React.FC<TokenRowProps> = ({ token, index, onTokenClick }) => {
   // Pulse animation for new transactions
   const pulseStyle = {
     animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
@@ -28,21 +29,30 @@ export const TokenRow: React.FC<TokenRowProps> = ({ token, index }) => {
     }
   `;
 
+  const handleClick = () => {
+    onTokenClick(token);
+  };
+
   return (
     <>
       <style>{keyframes}</style>
-      <tr className="border-b border-gray-900 hover:bg-gray-900/30 transition-colors cursor-pointer group">
+      <tr 
+        className="border-b border-gray-900 hover:bg-gray-900/30 transition-colors cursor-pointer group"
+        onClick={handleClick}
+      >
         <td className="px-3 py-3 text-gray-500 text-xs">#{index + 1}</td>
         
         <td className="px-3 py-3">
           <div className="flex items-center space-x-2">
-                <img className='w-5 h-5 rounded-full ' src={token.chain} alt="Solana Logo" />
+            <img className='w-5 h-5 rounded-full ' src={token.chain} alt="Solana Logo" />
             <div className="flex items-center space-x-1">
               <img src={"https://static1.tokenterminal.com//raydium/products/raydiumclmm/logo.png"} className="w-6 h-6 bg-gray-700 rounded-full flex-shrink-0" />
             </div>
             <div>
               <div className="flex items-center space-x-1">
-                <span className="text-white font-medium text-sm">{token.token}</span>
+                <span className="text-white font-medium text-sm group-hover:text-blue-400 transition-colors">
+                  {token.token}
+                </span>
                 <span className="text-gray-500 text-xs">/ {token.tokenPair?.split('/')[1] || 'SOL'}</span>
               </div>
               <div className="flex items-center space-x-1">
