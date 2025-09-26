@@ -2,11 +2,19 @@ use futures::StreamExt;
 use redis::{AsyncCommands, Client, RedisResult, RedisError};
 use tokio::sync::mpsc;
 use crate::{services::metrics_service::PeriodStatsUpdate, types::worker::StructeredTransaction};
+use serde::{Deserialize,Serialize};
 
 #[derive(Debug)]
 pub enum PubSubMessage{
     Transaction(StructeredTransaction),
-    PriceMetrics(PeriodStatsUpdate)
+    PriceMetrics(PeriodStatsUpdate),
+    CurrentPrice(PriceInfo)
+}
+
+#[derive(Debug,Serialize,Deserialize)]
+pub struct PriceInfo{
+    pub usd_current_price : f64,
+    pub sol_relative_price : f64
 }
 
 #[derive(Debug, Clone)]
@@ -27,7 +35,6 @@ impl PubSubManager {
         transaction: StructeredTransaction,
     ) -> RedisResult<()> {
         let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
-        
         
         let message_json = serde_json::to_string(&transaction)
             .map_err(|e| {
@@ -59,6 +66,30 @@ impl PubSubManager {
         Ok(())
     }
 
+    pub async fn publish_current_price(
+        &self,
+        price: f64,
+        sol_price : f64,
+        token_pair : String
+    ) -> RedisResult<()> {
+        let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
+        
+         let price_info = PriceInfo{
+            usd_current_price : price,
+            sol_relative_price : price / sol_price
+        };
+        let message_json = serde_json::to_string(&price_info)
+            .map_err(|e| {
+                println!("Error serializing the current price message");
+                e
+            })?;
+    
+        conn.publish("current_price", message_json).await?;
+        
+        println!("📤 Published current price for {}", token_pair);
+        Ok(())
+    }
+
     // the websocket calls this fn.
     pub async fn subscribe_to_channels(&self) -> RedisResult<mpsc::UnboundedReceiver<PubSubMessage>> {
         let (tx, rx) = mpsc::unbounded_channel(); // we create unbounded mpsc channel to send messages to it through redis subscription
@@ -76,6 +107,7 @@ impl PubSubManager {
         let mut pubsub = client.get_async_pubsub().await?;
         pubsub.subscribe("transactions").await?; // sunscribe to both channels
         pubsub.subscribe("price_metrics").await?;
+        pubsub.subscribe("current_price").await?;
 
         println!("Subs to redis channel");
         let mut pubsub_stream = pubsub.into_on_message();
@@ -111,6 +143,19 @@ impl PubSubManager {
                         }
                         Err(e) => {
                             println!("Failed to desearialize period stats : {}",e)
+                        }
+                    }
+                }
+                "current_price" => {
+                    match serde_json::from_str::<PriceInfo>(&payload) {
+                        Ok(price_info) => {
+                            if let Err(_) = tx.send(PubSubMessage::CurrentPrice(price_info)){
+                                println!("Failed to send current price to mpsc channel");
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            println!("Failed to desearialize current price : {}",e)
                         }
                     }
                 }

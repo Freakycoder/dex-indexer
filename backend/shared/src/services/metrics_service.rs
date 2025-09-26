@@ -97,7 +97,7 @@ impl MetricsService {
                                 let _ = self.pubsub_manager.publish_price_and_metrics_update(period_stats_update).await;
                             }
                             Ok(None) => {
-                                println!("Recieved no historical price for : {}", token);
+                                println!("Received no historical price for : {}", token);
                             }
                             Err(e) => {
                                 println!("Redis error occured while getting historical price : {}", e);
@@ -140,7 +140,7 @@ impl MetricsService {
                                 let _ = self.pubsub_manager.publish_price_and_metrics_update(period_stats_update).await;
                             }
                             Ok(None) => {
-                                println!("Recieved no historical price for : {}", token);
+                                println!("Received no historical price for : {}", token);
                             }
                             Err(e) => {
                                 println!("Redis error occured while getting historical price : {}", e);
@@ -183,7 +183,7 @@ impl MetricsService {
                                 let _ = self.pubsub_manager.publish_price_and_metrics_update(period_stats_update).await;
                             }
                             Ok(None) => {
-                                println!("Recieved no historical price for : {}", token);
+                                println!("Received no historical price for : {}", token);
                             }
                             Err(e) => {
                                 println!("Redis error occured while getting historical price : {}", e);
@@ -226,7 +226,7 @@ impl MetricsService {
                                 let _ = self.pubsub_manager.publish_price_and_metrics_update(period_stats_update).await;
                             }
                             Ok(None) => {
-                                println!("Recieved no historical price for : {}", token);
+                                println!("Received no historical price for : {}", token);
                             }
                             Err(e) => {
                                 println!("Redis error occured while getting historical price : {}", e);

@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useGlobalWebSocket, TransactionData } from '../context/WebsocketContext';
+import { useGlobalWebSocket, TransactionData, TokenMetrics } from '../context/WebsocketContext';
 
 interface UseWebSocketRoomReturn {
   transactions: TransactionData[];
+  metrics: TokenMetrics | null;
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
   subscriberCount: number;
   isSubscribed: boolean;
@@ -14,6 +15,7 @@ interface UseWebSocketRoomReturn {
 export const useWebSocketRoom = (roomId: string, autoJoin: boolean = true): UseWebSocketRoomReturn => {
   const globalWs = useGlobalWebSocket();
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
+  const [metrics, setMetrics] = useState<TokenMetrics | null>(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
   
   // Generate unique subscriber ID
@@ -24,11 +26,13 @@ export const useWebSocketRoom = (roomId: string, autoJoin: boolean = true): UseW
   const room = globalWs.rooms.get(roomId);
   const subscriberCount = room ? room.subscribers.size : 0;
 
-  // Update local transactions when room transactions change
+  // Update local transactions and metrics when room data changes
   useEffect(() => {
     if (isSubscribed) {
       const roomTransactions = globalWs.getRoomTransactions(roomId);
+      const roomMetrics = globalWs.getRoomMetrics(roomId);
       setTransactions(roomTransactions);
+      setMetrics(roomMetrics);
     }
   }, [globalWs.rooms, roomId, isSubscribed, globalWs]);
 
@@ -37,9 +41,11 @@ export const useWebSocketRoom = (roomId: string, autoJoin: boolean = true): UseW
       globalWs.joinRoom(roomId, subscriberId);
       setIsSubscribed(true);
       
-      // Get existing transactions for this room
+      // Get existing data for this room
       const existingTransactions = globalWs.getRoomTransactions(roomId);
+      const existingMetrics = globalWs.getRoomMetrics(roomId);
       setTransactions(existingTransactions);
+      setMetrics(existingMetrics);
       
       console.log(`🚪 Joined room: ${roomId}`);
     }
@@ -67,10 +73,11 @@ export const useWebSocketRoom = (roomId: string, autoJoin: boolean = true): UseW
     return () => {
       leaveRoom();
     };
-  }, [autoJoin, joinRoom, leaveRoom]);
+  }, [autoJoin]); // Don't include joinRoom and leaveRoom to avoid infinite loop
 
   return {
     transactions,
+    metrics,
     connectionStatus: globalWs.connectionStatus,
     subscriberCount,
     isSubscribed,
@@ -91,6 +98,7 @@ export const useAvailableRooms = () => {
     subscriberCount: room.subscribers.size,
     isActive: room.subscribers.size > 0,
     lastTransaction: room.transactions[0] || null,
+    metrics: room.metrics || null,
   }));
 
   return {

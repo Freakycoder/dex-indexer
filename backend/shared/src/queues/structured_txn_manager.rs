@@ -8,7 +8,7 @@ pub struct StructeredTxnQueueManager {
 
 impl StructeredTxnQueueManager {
     pub fn new() -> Result<Self, RedisError> {
-        println!("Initializing redis client...for QUEUE");
+        println!("Initializing redis client...for STRUCTURED QUEUE");
         let redis_url = "redis://localhost:6379";
         let redis_client = Client::open(redis_url).map_err(|e| {
             println!("Couldn't initialize a redis client : {}", e);

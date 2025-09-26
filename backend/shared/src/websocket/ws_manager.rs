@@ -84,6 +84,17 @@ impl WebsocketManager {
                             }
                         };
                     }
+                    PubSubMessage::CurrentPrice(price) => {
+                         match serde_json::to_string(&price) {
+                            Ok(stats) => {
+                                Self::push(stats).await
+                            }
+                            Err(e) => {
+                                println!("Failed to serialize the current price from mpsc to send through socket : {}",e);
+                                continue;
+                            }
+                        };
+                    }
             }
         }
     

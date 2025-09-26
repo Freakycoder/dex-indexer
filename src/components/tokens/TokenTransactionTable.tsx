@@ -75,10 +75,10 @@ export const TokenTransactionTable: React.FC<TokenTransactionTableProps> = ({
 
   // Calculate SOL amount from USD value and token price
   const calculateSolAmount = (transaction: TransactionData): number => {
-    if (!transaction.usd || !transaction.token_price) return 0;
+    if (!transaction.usd_value || !transaction.token_price) return 0;
     // Assuming SOL price around $100 for calculation (in real app, get from WebSocket)
     const solPrice = 100; 
-    return transaction.usd / solPrice;
+    return transaction.usd_value / solPrice;
   };
 
   return (
@@ -136,7 +136,7 @@ export const TokenTransactionTable: React.FC<TokenTransactionTableProps> = ({
 
                   {/* USD */}
                   <td className="px-3 py-3 text-white text-sm font-medium">
-                    ${transaction.usd?.toLocaleString() || '0'}
+                    ${transaction.usd_value?.toLocaleString() || '0'}
                   </td>
 
                   {/* Token Amount */}

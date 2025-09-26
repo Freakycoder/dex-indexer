@@ -1,8 +1,7 @@
 use axum::{response::Json, routing::get, Router};
 use serde_json::{json, Value};
-use shared::{queues::{structured_txn_manager::StructeredTxnQueueManager, swap_txn_manager::SwapTxnQueueManager}, websocket::ws_manager::WebsocketManager};
+use shared::websocket::ws_manager::WebsocketManager;
 use dotenvy::dotenv;
-use shared::workers::txn_worker::TxnWorker;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -18,17 +17,6 @@ async fn main() -> Result<(), anyhow::Error> {
     let ws_routes = ws_manager.get_route();
 
     let app = Router::new().nest("/api", api_routes).merge(ws_routes);
-
-    tokio::spawn(async move {
-        println!(" Starting txn worker...");
-        
-        let swap_queue = SwapTxnQueueManager::new().expect("Failed to create swap queue");
-        let structured_txn_queue = StructeredTxnQueueManager::new().expect("Failed to create structured txn queue");
-        let worker = TxnWorker::new(swap_queue,  structured_txn_queue);
-        
-        worker.start_processing().await;
-    });
-
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3001").await?;
     println!("Server running at port 3001");
 

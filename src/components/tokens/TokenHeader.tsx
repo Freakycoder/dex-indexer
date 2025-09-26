@@ -27,8 +27,8 @@ export const TokenHeader: React.FC<TokenHeaderProps> = ({
     const buys = transactions.filter(tx => tx.purchase_type === 'Buy');
     const sells = transactions.filter(tx => tx.purchase_type === 'Sell');
     
-    const buyVolume = buys.reduce((sum, tx) => sum + (tx.usd || 0), 0);
-    const sellVolume = sells.reduce((sum, tx) => sum + (tx.usd || 0), 0);
+    const buyVolume = buys.reduce((sum, tx) => sum + (tx.usd_value || 0), 0);
+    const sellVolume = sells.reduce((sum, tx) => sum + (tx.usd_value || 0), 0);
     const totalVolume = buyVolume + sellVolume;
 
     // Get unique makers (traders)

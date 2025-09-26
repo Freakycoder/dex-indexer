@@ -71,8 +71,8 @@ export default function Home() {
           priceChange: Math.floor(Math.random() * 100),
           age: getAge(transaction.date),
           txns: 1,
-          volume: transaction.usd || 0,
-          volumeFormatted: formatVolume(transaction.usd || 0),
+          volume: transaction.usd_value || 0,
+          volumeFormatted: formatVolume(transaction.usd_value || 0),
           makers: 1,
           buys: transaction.purchase_type === 'Buy' ? 1 : 0,
           sells: transaction.purchase_type === 'Sell' ? 1 : 0,
@@ -89,7 +89,7 @@ export default function Home() {
       } else {
         const existingToken = tokenMap.get(tokenPair)!;
         existingToken.txns += 1;
-        existingToken.volume += transaction.usd || 0;
+        existingToken.volume += transaction.usd_value || 0;
         existingToken.volumeFormatted = formatVolume(existingToken.volume);
         if (transaction.purchase_type === 'Buy') {
           existingToken.buys += 1;

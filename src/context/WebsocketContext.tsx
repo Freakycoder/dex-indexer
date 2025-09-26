@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 export interface TransactionData {
   date: string;
   purchase_type: 'Buy' | 'Sell';
-  usd: number | null;
+  usd_value: number | null; // Note: backend uses usd_value, not just usd
   token_quantity: number;
   token_price: number;
   owner: string;
@@ -12,10 +12,48 @@ export interface TransactionData {
   token_name: string;
 }
 
+export interface PeriodStats {
+  txns: number;
+  volume: number;
+  makers: number;
+  buys: number;
+  sells: number;
+  buy_volume: number;
+  sell_volume: number;
+  buyers: number;
+  sellers: number;
+}
+
+export interface PeriodStatsUpdate {
+  token_pair: string;
+  timeframe: 'FiveMins' | 'OneHour' | 'SixHours' | 'TwentyFourHours';
+  price_change: number;
+  period_stats: PeriodStats | null;
+}
+
+export interface PriceInfo {
+  usd_current_price: number;
+  sol_relative_price: number;
+  token_pair?: string; // Added for routing purposes
+}
+
+export interface TokenMetrics {
+  '5m': { price_change: number; stats: PeriodStats | null };
+  '1h': { price_change: number; stats: PeriodStats | null };
+  '6h': { price_change: number; stats: PeriodStats | null };
+  '24h': { price_change: number; stats: PeriodStats | null };
+  currentPriceUSD?: number;
+  currentPriceSOL?: number;
+  marketCap?: number;
+  fdv?: number;
+  liquidity?: number;
+}
+
 export interface WebSocketRoom {
   id: string;
   name: string;
   transactions: TransactionData[];
+  metrics: TokenMetrics;
   subscribers: Set<string>;
 }
 
@@ -28,6 +66,7 @@ export interface GlobalWebSocketContextType {
   joinRoom: (roomId: string, subscriberId: string) => void;
   leaveRoom: (roomId: string, subscriberId: string) => void;
   getRoomTransactions: (roomId: string) => TransactionData[];
+  getRoomMetrics: (roomId: string) => TokenMetrics | null;
   connect: () => void;
   disconnect: () => void;
   getAllTransactions: () => TransactionData[];
@@ -55,6 +94,26 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     return transaction.token_pair;
   }, []);
 
+  const initializeRoom = (tokenPair: string): WebSocketRoom => {
+    return {
+      id: tokenPair,
+      name: tokenPair,
+      transactions: [],
+      metrics: {
+        '5m': { price_change: 0, stats: null },
+        '1h': { price_change: 0, stats: null },
+        '6h': { price_change: 0, stats: null },
+        '24h': { price_change: 0, stats: null },
+        currentPriceUSD: 0,
+        currentPriceSOL: 0,
+        marketCap: 0,
+        fdv: 0,
+        liquidity: 0,
+      },
+      subscribers: new Set(),
+    };
+  };
+
   const addTransactionToRoom = useCallback((transaction: TransactionData) => {
     const tokenPair = extractTokenPair(transaction);
     
@@ -62,25 +121,79 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       const newRooms = new Map(prevRooms);
       
       if (!newRooms.has(tokenPair)) {
-        newRooms.set(tokenPair, {
-          id: tokenPair,
-          name: tokenPair,
-          transactions: [],
-          subscribers: new Set(),
-        });
+        newRooms.set(tokenPair, initializeRoom(tokenPair));
         console.log(`🏠 Created new room: ${tokenPair}`);
       }
       
       const room = newRooms.get(tokenPair)!;
-      room.transactions = [transaction, ...room.transactions].slice(0, 100); // Keep last 100 per room
+      room.transactions = [transaction, ...room.transactions].slice(0, 100);
+      
+      // Update current price from transaction
+      if (transaction.token_price) {
+        room.metrics.currentPriceUSD = transaction.token_price;
+        // Calculate SOL price (assuming SOL is around $100, this should come from backend)
+        room.metrics.currentPriceSOL = transaction.token_price / 100;
+      }
       
       console.log(`📨 Added transaction to room ${tokenPair} (${room.subscribers.size} subscribers)`);
       
       return newRooms;
     });
     
-    setAllTransactions(prev => [transaction, ...prev].slice(0, 500)); // Keep last 500 globally
+    setAllTransactions(prev => [transaction, ...prev].slice(0, 500));
   }, [extractTokenPair]);
+
+  const updateRoomMetrics = useCallback((update: PeriodStatsUpdate) => {
+    setRooms(prevRooms => {
+      const newRooms = new Map(prevRooms);
+      
+      if (!newRooms.has(update.token_pair)) {
+        newRooms.set(update.token_pair, initializeRoom(update.token_pair));
+        console.log(`🏠 Created new room for metrics: ${update.token_pair}`);
+      }
+      
+      const room = newRooms.get(update.token_pair)!;
+      
+      // Map timeframe to metrics key
+      const timeframeMap: Record<string, keyof TokenMetrics> = {
+        'FiveMins': '5m',
+        'OneHour': '1h',
+        'SixHours': '6h',
+        'TwentyFourHours': '24h'
+      };
+      
+      const key = timeframeMap[update.timeframe];
+      if (key && (key === '5m' || key === '1h' || key === '6h' || key === '24h')) {
+        room.metrics[key] = {
+          price_change: update.price_change,
+          stats: update.period_stats
+        };
+      }
+      
+      console.log(`📊 Updated metrics for ${update.token_pair} (${update.timeframe})`);
+      
+      return newRooms;
+    });
+  }, []);
+
+  const updateRoomPrice = useCallback((priceInfo: PriceInfo, tokenPair: string) => {
+    setRooms(prevRooms => {
+      const newRooms = new Map(prevRooms);
+      
+      if (!newRooms.has(tokenPair)) {
+        newRooms.set(tokenPair, initializeRoom(tokenPair));
+        console.log(`🏠 Created new room for price: ${tokenPair}`);
+      }
+      
+      const room = newRooms.get(tokenPair)!;
+      room.metrics.currentPriceUSD = priceInfo.usd_current_price;
+      room.metrics.currentPriceSOL = priceInfo.sol_relative_price;
+      
+      console.log(`💰 Updated price for ${tokenPair}: $${priceInfo.usd_current_price}`);
+      
+      return newRooms;
+    });
+  }, []);
 
   const connect = useCallback(() => {
     if (isConnectingRef.current || wsRef.current?.readyState === WebSocket.OPEN) {
@@ -103,11 +216,38 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
 
       wsRef.current.onmessage = (event) => {
         try {
-          const transaction: TransactionData = JSON.parse(event.data);
-          console.log('📡 WebSocket: Received transaction:', transaction);
-          addTransactionToRoom(transaction);
+          const data = JSON.parse(event.data);
+          
+          // Check message type and route accordingly
+          
+          // Type 1: Transaction (has purchase_type and token_pair)
+          if (data.purchase_type && data.token_pair) {
+            console.log('📡 Transaction:', data.token_pair);
+            addTransactionToRoom(data as TransactionData);
+          } 
+          // Type 2: Metrics Update (has timeframe, token_pair, and price_change)
+          else if (data.timeframe && data.token_pair && data.price_change !== undefined) {
+            console.log('📊 Metrics Update:', data.token_pair, data.timeframe);
+            updateRoomMetrics(data as PeriodStatsUpdate);
+          }
+          // Type 3: Current Price (has usd_current_price and sol_relative_price)
+          else if (data.usd_current_price !== undefined && data.sol_relative_price !== undefined) {
+            console.log('💰 Price Update');
+            // Since price updates don't include token_pair from backend,
+            // we need to apply to all rooms or add token_pair on backend
+            // For now, let's assume it comes with token_pair
+            if (data.token_pair) {
+              updateRoomPrice(data as PriceInfo, data.token_pair);
+            } else {
+              console.warn('⚠️ Price update missing token_pair');
+            }
+          }
+          // Unknown message type
+          else {
+            console.log('❓ Unknown message type:', data);
+          }
         } catch (error) {
-          console.error('❌ WebSocket: Failed to parse transaction:', error);
+          console.error('❌ WebSocket: Failed to parse message:', error);
           console.log('Raw data:', event.data);
         }
       };
@@ -116,6 +256,12 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
         console.log(`🔌 WebSocket: Connection closed (${event.code}): ${event.reason}`);
         setConnectionStatus('disconnected');
         isConnectingRef.current = false;
+        
+        // Reconnect after 3 seconds
+        setTimeout(() => {
+          console.log('🔄 Attempting to reconnect...');
+          connect();
+        }, 3000);
       };
 
       wsRef.current.onerror = (error) => {
@@ -129,7 +275,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       setConnectionStatus('error');
       isConnectingRef.current = false;
     }
-  }, [url, addTransactionToRoom]);
+  }, [url, addTransactionToRoom, updateRoomMetrics, updateRoomPrice]);
 
   const disconnect = useCallback(() => {
     console.log('🛑 WebSocket: Manual disconnect');
@@ -149,13 +295,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       const newRooms = new Map(prevRooms);
       
       if (!newRooms.has(roomId)) {
-        // Create room if it doesn't exist
-        newRooms.set(roomId, {
-          id: roomId,
-          name: roomId,
-          transactions: [],
-          subscribers: new Set(),
-        });
+        newRooms.set(roomId, initializeRoom(roomId));
         console.log(`🏠 Created room for subscriber: ${roomId}`);
       }
       
@@ -176,8 +316,6 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       if (room) {
         room.subscribers.delete(subscriberId);
         console.log(`👋 ${subscriberId} left room ${roomId} (${room.subscribers.size} remaining subscribers)`);
-        
-        // Keep room even if no subscribers (for transaction history)
       }
       
       return newRooms;
@@ -187,6 +325,11 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   const getRoomTransactions = useCallback((roomId: string): TransactionData[] => {
     const room = rooms.get(roomId);
     return room ? room.transactions : [];
+  }, [rooms]);
+
+  const getRoomMetrics = useCallback((roomId: string): TokenMetrics | null => {
+    const room = rooms.get(roomId);
+    return room ? room.metrics : null;
   }, [rooms]);
 
   const getAllTransactions = useCallback((): TransactionData[] => {
@@ -200,7 +343,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     return () => {
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, []); // Empty deps to avoid reconnect loop
 
   // Get active rooms (rooms with subscribers)
   const activeRooms = Array.from(rooms.entries())
@@ -214,6 +357,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     joinRoom,
     leaveRoom,
     getRoomTransactions,
+    getRoomMetrics,
     connect,
     disconnect,
     getAllTransactions,

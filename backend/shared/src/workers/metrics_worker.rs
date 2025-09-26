@@ -1,12 +1,13 @@
 use std::time::Duration;
 use tokio::time::sleep;
-use crate::{queues::structured_txn_manager::StructeredTxnQueueManager, redis::{metric_and_ohlcv_manager::MetricOHLCVManager, pubsub_manager::PubSubManager}};
+use crate::{queues::structured_txn_manager::StructeredTxnQueueManager, redis::{metric_and_ohlcv_manager::MetricOHLCVManager, pubsub_manager::PubSubManager, token_symbol_manager::TokenSymbolManager}};
 
 #[derive(Debug)]
 pub struct MetricsWorker{
     pub structured_txn_queue : StructeredTxnQueueManager,
     pub metric_manager : MetricOHLCVManager,
-    pub pubsub_manager : PubSubManager
+    pub pubsub_manager : PubSubManager,
+    pub token_manager : TokenSymbolManager
 }
 
 impl MetricsWorker {
@@ -14,7 +15,8 @@ impl MetricsWorker {
 
         let metric_manager = MetricOHLCVManager::new()?;
         let pubsub_manager = PubSubManager::new().expect("Error creating pub sub manager");
-        Ok(Self { structured_txn_queue, metric_manager, pubsub_manager })
+        let token_manager = TokenSymbolManager::new().expect("Error creating token symbol manager in metrics worker");
+        Ok(Self { structured_txn_queue, metric_manager, pubsub_manager, token_manager })
     }
 
     pub async fn start_processing(&self) {
@@ -28,7 +30,14 @@ impl MetricsWorker {
                     if let Err(e) = self.metric_manager.update_current_price(txn_message.token_pair.clone(), txn_message.token_price).await{
                         println!("Error occured while updating current price to redis : {}",e)
                     };
-                    if let Err(e) = self.pubsub_manager.publish_current_price(txn_message.token_price, txn_message.token_pair).await{
+                    let sol_info = match self.token_manager.get_sol_value().await{
+                        Some(price) => price,
+                        None => {
+                            println!("Got no value for SOL from redis");
+                            continue;
+                        }
+                    };
+                    if let Err(e) = self.pubsub_manager.publish_current_price(txn_message.token_price, sol_info.sol_price, txn_message.token_pair).await{
                         println!("Error occured while publishing current price : {}",e)
                     };
                     let market_cap = fastrand::i32(100_000..=1_000_000);

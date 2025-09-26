@@ -162,7 +162,7 @@ impl PriceService {
 
         match Metadata::safe_deserialize(&metadata_account_data) {
             Ok(metadeta) => {
-                self.token_manager.create_mint_info(mint_address, metadeta.symbol.clone(), metadeta.name.clone()).await.expect("Error saving mint info to redis cache");
+                self.token_manager.create_mint_info(mint_address, metadeta.symbol.clone().trim().to_string(), metadeta.name.clone().trim().to_string()).await.expect("Error saving mint info to redis cache");
                 return Ok(Some(TokenInfo { token_symbol: metadeta.symbol, token_name: metadeta.name }));
                 }
             Err(_) => {
