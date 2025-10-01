@@ -3,8 +3,10 @@ export interface Token {
   rank: number;
   chain: string;
   chainColor: string;
-  token: string;
+  tokenSymbol: string;
   tokenName: string;
+  dexTag: string;
+  dexName: string;
   tokenPair: string;
   price: number;
   priceChange?: number;
