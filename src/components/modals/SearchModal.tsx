@@ -16,7 +16,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, token
   
   // Filter tokens based on search
   const filteredTokens = tokens.filter(token => 
-    token.token.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    token.tokenSymbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
     token.tokenName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     token.tokenPair?.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -83,7 +83,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, token
                       />
                       <div>
                         <p className="text-white text-sm font-medium">
-                          {token.token} <span className="text-gray-500">({token.tokenName})</span>
+                          {token.tokenSymbol} <span className="text-gray-500">({token.tokenName})</span>
                         </p>
                         <p className="text-gray-500 text-xs">{token.tokenPair}</p>
                       </div>
@@ -115,7 +115,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, token
                         className="p-2 hover:bg-gray-800/50 rounded cursor-pointer transition-colors"
                       >
                         <p className="text-gray-400 text-sm">
-                          {token.token} <span className="text-gray-600">({token.tokenPair})</span>
+                          {token.tokenSymbol} <span className="text-gray-600">({token.tokenPair})</span>
                         </p>
                       </div>
                     ))}
