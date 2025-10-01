@@ -12,6 +12,7 @@ pub struct StructeredTransaction {
     pub token_name : String,
     pub owner: String,
     pub dex_type: String,
+    pub dex_tag : String
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
