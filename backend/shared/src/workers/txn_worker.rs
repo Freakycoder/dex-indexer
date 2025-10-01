@@ -2,13 +2,14 @@ use crate::{
     redis::{pubsub_manager::PubSubManager, token_symbol_manager::TokenSymbolManager},
     types::{
         grpc::{CustomTokenBalance, TransactionMetadata},
-        worker::{StructeredTransaction, Type},
+        worker::{StructeredTransaction,Type},
     },
 };
 use crate::services::price_service::PriceService;
 use crate::queues::{swap_txn_manager::SwapTxnQueueManager, structured_txn_manager::StructeredTxnQueueManager};
 use std::{collections::HashMap, time::Duration};
 use tokio::time::sleep;
+use crate::{RADUIM_AMM_V4,RADUIM_CLMM,METEORA_DAMM_V1,METEORA_DAMM_V2,METEORA_DLMM};
 
 #[derive(Debug)]
 struct SwapAnalysis {
@@ -65,7 +66,20 @@ impl TxnWorker {
             if message.contains("SwapV2") || message.contains("SwapRaydiumV4") {
                 println!("✅ Detected a Raydium swap");
 
-                if let Some(structured_txn) = self.transform_swap(&txn_meta).await {
+                if let Some(structured_txn) = self.transform_swap(&txn_meta, "Raydium").await {
+                    if let Err(e) = self.pubsub_manager.publish_transaction(structured_txn.clone()).await {
+                        println!("Failed to publish transaction to redis channel: {}", e);
+                    }
+
+                    if let Err(e) = self.structured_txn_queue.enqueue_message(structured_txn).await {
+                        println!("Failed to enqueue structured transaction: {}", e);
+                    }
+                }
+                break;
+            }
+            else if message.contains("Swap2") || message.contains("Swap") {
+                println!("✅ Detected a Meteora Swap");
+                 if let Some(structured_txn) = self.transform_swap(&txn_meta, "Meteora").await {
                     if let Err(e) = self.pubsub_manager.publish_transaction(structured_txn.clone()).await {
                         println!("Failed to publish transaction to redis channel: {}", e);
                     }
@@ -158,7 +172,7 @@ impl TxnWorker {
         })
     }
 
-    async fn transform_swap(&self, txn_meta: &TransactionMetadata) -> Option<StructeredTransaction> {
+    async fn transform_swap(&self, txn_meta: &TransactionMetadata, dex_type : &str) -> Option<StructeredTransaction> {
         let pre_balance_array = &txn_meta.pre_token_balances;
         let post_balance_array = &txn_meta.post_token_balances;
 
@@ -169,6 +183,25 @@ impl TxnWorker {
 
         let analysis = self.analyze_swap(pre_balance_array, post_balance_array).await?;
         println!("Got swap analysis for the swap");
+
+        let logs = &txn_meta.log_messages;
+        let mut dex_tag  = String::new();
+
+        if logs.contains(&METEORA_DLMM.to_string()){
+            dex_tag = "DLMM".to_string()
+        }
+        else if logs.contains(&METEORA_DAMM_V2.to_string()) {
+            dex_tag = "DYN2".to_string()
+        }
+        else if logs.contains(&METEORA_DAMM_V1.to_string()) {
+            dex_tag = "DYN".to_string()
+        }
+        else if logs.contains(&RADUIM_AMM_V4.to_string()) {
+            dex_tag = "CPMM".to_string()
+        }
+        else if logs.contains(&RADUIM_CLMM.to_string()) {
+            dex_tag = "CLMM".to_string()
+        }
 
         let (purchase_type, token_amount_change, sol_amount_abs) = if analysis.pool_sol_change < 0.0
         {
@@ -227,7 +260,8 @@ impl TxnWorker {
                 token_pair,
                 token_name,
                 owner: analysis.user_owner,
-                dex_type: "Raydium".to_string(),
+                dex_type: dex_type.to_string(),
+                dex_tag : dex_tag.to_string()
             })
         } else {
             Some(StructeredTransaction {
@@ -239,7 +273,8 @@ impl TxnWorker {
                 token_pair,
                 token_name,
                 owner: analysis.user_owner,
-                dex_type: "Raydium".to_string(),
+                dex_type: dex_type.to_string(),
+                dex_tag : dex_tag.to_string()
             })
         }
     }
