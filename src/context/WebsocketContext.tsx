@@ -8,6 +8,7 @@ export interface TransactionData {
   token_price: number;
   owner: string;
   dex_type: string;
+  dex_tag : string;
   token_pair: string;
   token_name: string;
 }
@@ -222,7 +223,8 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
           
           // Type 1: Transaction (has purchase_type and token_pair)
           if (data.purchase_type && data.token_pair) {
-            console.log('📡 Transaction:', data.token_pair);
+            console.log('📡 Transaction:', data.token_pair, 'dex_tag:', data.dex_tag, 'dex_type:', data.dex_type);
+            console.log('📡 Full transaction data:', data);
             addTransactionToRoom(data as TransactionData);
           } 
           // Type 2: Metrics Update (has timeframe, token_pair, and price_change)
