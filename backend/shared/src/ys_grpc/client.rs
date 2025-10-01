@@ -1,11 +1,8 @@
-use crate::queues::swap_txn_manager::SwapTxnQueueManager;
+use crate::{queues::swap_txn_manager::SwapTxnQueueManager, METEORA_DAMM_V1, METEORA_DAMM_V2, METEORA_DLMM, RADUIM_AMM_V4, RADUIM_CLMM};
 use futures::{SinkExt, StreamExt}; // used for something that already implement the sink and stream trait. its like an interface for them, which provides them extra methods like .send().await or .next().await() or .map() or .filter()
 use std::collections::HashMap;
 use yellowstone_grpc_client::{ClientTlsConfig, GeyserGrpcClient};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterTransactions};
-
-const RADUIM_AMM_V4: &str = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
-const RADUIM_CLMM: &str = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
 
 #[derive(Debug, Clone)]
 pub struct GrpcClient {
@@ -45,7 +42,7 @@ impl GrpcClient {
                 vote: Some(false),
                 failed: Some(false),
                 signature: None,
-                account_include: vec![RADUIM_AMM_V4.to_string(), RADUIM_CLMM.to_string()],
+                account_include: vec![RADUIM_AMM_V4.to_string(), RADUIM_CLMM.to_string(), METEORA_DLMM.to_string(), METEORA_DAMM_V2.to_string(), METEORA_DAMM_V1.to_string() ],
                 account_exclude: vec![
                     "MEViEnscUm6tsQRoGd9h6nLQaQspKj7DB2M5FwM3Xvz".to_string(), // SolanaMevBot.com
                     "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4".to_string(), // Jupiter (used by many bots)
