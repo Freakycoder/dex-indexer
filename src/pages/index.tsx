@@ -59,13 +59,15 @@ export default function Home() {
           value: Math.random() * 100
         }));
 
-        tokenMap.set(tokenPair, {
+        const newToken = {
           id: tokenPair,
           rank: tokenMap.size + 1,
           chain: 'https://assets.coingecko.com/coins/images/4128/large/solana.png',
           chainColor: '#9945FF',
-          token: tokenPair.split('/')[0],
+          tokenSymbol: tokenPair.split('/')[0],
           tokenName: transaction.token_name,
+          dexTag: transaction.dex_tag,
+          dexName: transaction.dex_type,
           tokenPair: tokenPair,
           price: transaction.token_price || 0,
           priceChange: Math.floor(Math.random() * 100),
@@ -85,7 +87,10 @@ export default function Home() {
           sparklineData,
           isPositive: transaction.purchase_type === 'Buy',
           lastTransaction: transaction
-        });
+        };
+        
+        console.log('🎯 Creating token with dexTag:', newToken.dexTag, 'dexName:', newToken.dexName);
+        tokenMap.set(tokenPair, newToken);
       } else {
         const existingToken = tokenMap.get(tokenPair)!;
         existingToken.txns += 1;
