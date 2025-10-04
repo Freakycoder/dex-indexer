@@ -67,6 +67,8 @@ export const TokenRow: React.FC<TokenRowProps> = ({
                     ? "https://static1.tokenterminal.com//raydium/products/raydiumclmm/logo.png"
                     : token.dexName === "Meteora"
                     ? "https://docs.meteora.ag/images/logo/meteora.png"
+                    : token.dexName === "Orca"
+                    ? "https://files.swissborg.com/product/wealth-app/assets/ic_crypto_orca.png"
                     : "https://via.placeholder.com/24" // fallback
                 }
                 alt={token.dexName}
