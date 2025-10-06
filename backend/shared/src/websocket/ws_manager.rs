@@ -94,6 +94,17 @@ impl WebsocketManager {
                                 continue;
                             }
                         };
+                    },
+                    PubSubMessage::CandleUpdate(candle_data) => {
+                         match serde_json::to_string(&candle_data) {
+                            Ok(stats) => {
+                                Self::push(stats).await
+                            }
+                            Err(e) => {
+                                println!("Failed to serialize the candle data from mpsc to send through socket : {}",e);
+                                continue;
+                            }
+                        };
                     }
             }
         }
