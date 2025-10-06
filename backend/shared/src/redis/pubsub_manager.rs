@@ -8,7 +8,8 @@ use serde::{Deserialize,Serialize};
 pub enum PubSubMessage{
     Transaction(StructeredTransaction),
     PriceMetrics(PeriodStatsUpdate),
-    CurrentPrice(PriceInfo)
+    CurrentPrice(PriceInfo),
+    CandleUpdate(OHLCVcandle)
 }
 
 #[derive(Debug,Serialize,Deserialize)]
@@ -117,9 +118,10 @@ impl PubSubManager {
 
     async fn subscription_loop(client : Client, tx : mpsc::UnboundedSender<PubSubMessage>) -> RedisResult<()>{
         let mut pubsub = client.get_async_pubsub().await?;
-        pubsub.subscribe("transactions").await?; // sunscribe to both channels
+        pubsub.subscribe("transactions").await?; // subscribe to both channels
         pubsub.subscribe("price_metrics").await?;
         pubsub.subscribe("current_price").await?;
+        pubsub.subscribe("candle_price").await?;
 
         println!("Subs to redis channel");
         let mut pubsub_stream = pubsub.into_on_message();
@@ -170,7 +172,20 @@ impl PubSubManager {
                             println!("Failed to desearialize current price : {}",e)
                         }
                     }
-                }
+                },
+                "candle_price" => {
+                    match serde_json::from_str::<OHLCVcandle>(&payload) {
+                        Ok(candle_info) => {
+                            if let Err(_) = tx.send(PubSubMessage::CandleUpdate(candle_info)){
+                                println!("Failed to send candle data to mpsc channel");
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            println!("Failed to desearialize candle data : {}",e)
+                        }
+                    }
+                },
                 _ => {
                     println!("⚠️ Received message from unknown channel: {}", channel);
                 }
