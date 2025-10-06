@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{Utc};
 use redis::{AsyncCommands, Client, RedisError, RedisResult};
 use serde::{Deserialize, Serialize};
-use crate::types::{worker::{StructeredTransaction, Type}};
+use crate::types::{ohlcv::OHLCVcandle, worker::{StructeredTransaction, Type}};
 
 #[derive(Debug,Serialize,Deserialize, Clone)]
 pub struct PeriodStats{
@@ -174,5 +174,41 @@ impl MetricOHLCVManager {
             buyers,
             sellers
         })
+    }
+
+    pub async fn save_candle(&self, candle : OHLCVcandle) -> RedisResult<()>{
+        let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
+        let key = format!("candles:{}:{}", candle.token_pair, candle.timeframe);
+        let candle_json = serde_json::to_string(&candle).expect("unable to serialize the candle");
+        conn.zadd(&key, candle_json, candle.timestamp).await?;
+        let cutoff = Utc::now().timestamp() - 172800;
+        conn.zrembyscore(&key, "-inf", cutoff).await?;
+
+        conn.expire(&key, 172800).await?;
+        println!("Saved candle for token-pair : {} : {} @ {}", candle.token_pair, candle.timeframe, candle.timestamp);
+        Ok(())
+    }
+
+    pub async fn get_candle(&self, token_pair: &str, timeframe : &str, timestamp : i64) -> RedisResult<Option<OHLCVcandle>>{
+        let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
+        let key = format!("candles:{}:{}", token_pair, timeframe);
+        let results : Vec<(String, i64)> = conn.zrangebyscore_withscores(&key, timestamp, timestamp).await?;
+
+        if let Some((candle_json, _)) = results.first(){
+            match serde_json::from_str::<OHLCVcandle>(&candle_json) {
+                Ok(candle) => {
+                    println!("Found existing candle at {}", candle.timestamp);
+                    Ok(Some(candle))
+                }
+                Err(e) => {
+                    println!("Unable to Serialize existing candle for pair : {} due to error : {}", token_pair, e);
+                    Ok(None)
+                }
+            }
+        }
+        else {
+            println!("No existing candle found for token : {}", token_pair);
+            Ok(None)
+        }
     }
 }
