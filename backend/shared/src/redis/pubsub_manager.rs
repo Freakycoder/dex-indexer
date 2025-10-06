@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use redis::{AsyncCommands, Client, RedisResult, RedisError};
 use tokio::sync::mpsc;
-use crate::{services::metrics_service::PeriodStatsUpdate, types::worker::StructeredTransaction};
+use crate::{services::metrics_service::PeriodStatsUpdate, types::{ohlcv::OHLCVcandle, worker::StructeredTransaction}};
 use serde::{Deserialize,Serialize};
 
 #[derive(Debug)]
@@ -90,6 +90,18 @@ impl PubSubManager {
         Ok(())
     }
 
+    pub async fn publish_candle_update(&self, candle : OHLCVcandle) -> RedisResult<()>{
+        let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
+        let candle_json = serde_json::to_string(&candle)
+            .map_err(|e| {
+                println!("Error serializing the candle data");
+                e
+            })?;
+        conn.publish("candle_price", candle_json).await?;
+        println!("Published candle update for token : {}", candle.token_pair);
+        Ok(())
+    }
+
     // the websocket calls this fn.
     pub async fn subscribe_to_channels(&self) -> RedisResult<mpsc::UnboundedReceiver<PubSubMessage>> {
         let (tx, rx) = mpsc::unbounded_channel(); // we create unbounded mpsc channel to send messages to it through redis subscription
@@ -167,30 +179,4 @@ impl PubSubManager {
         println!("pubsub subscription loop ended");
         Ok(())
     }
-
-
-    // /// Publish OHLCV update
-    // pub async fn publish_ohlcv_update(
-    //     &self,
-    //     token_pair: String,
-    //     timeframe: String,
-    //     ohlcv_data: serde_json::Value,
-    // ) -> RedisResult<()> {
-    //     let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
-        
-    //     let message = PubSubMessage::OHLCVUpdate {
-    //         token_pair: token_pair.clone(),
-    //         timeframe: timeframe.clone(),
-    //         data: ohlcv_data,
-    //     };
-        
-    //     let message_json = serde_json::to_string(&message)
-    //         .map_err(|e| RedisError::from((redis::ErrorKind::TypeError, "JSON serialization failed", e.to_string())))?;
-        
-    //     conn.publish("ohlcv", message_json).await?;
-        
-    //     println!("📤 Published OHLCV {} update for {}", timeframe, token_pair);
-    //     Ok(())
-    // }
-
 }
