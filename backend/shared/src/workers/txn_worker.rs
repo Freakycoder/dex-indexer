@@ -9,7 +9,9 @@ use crate::{
         worker::{StructeredTransaction, Type},
     },
 };
-use crate::{METEORA_DAMM_V1, METEORA_DAMM_V2, METEORA_DLMM, RADUIM_AMM_V4, RADUIM_CLMM};
+use crate::{
+    METEORA_DAMM_V1, METEORA_DAMM_V2, METEORA_DLMM, ORCA_CLMM, RADUIM_AMM_V4, RADUIM_CLMM,
+};
 use std::{collections::HashMap, time::Duration};
 use tokio::time::sleep;
 
@@ -68,50 +70,39 @@ impl TxnWorker {
         }
     }
     async fn filter_and_send_txns(&self, txn_meta: TransactionMetadata) {
-        for message in &txn_meta.log_messages {
-            if message.contains("SwapV2") || message.contains("SwapRaydiumV4") {
-                println!("✅ Detected a Raydium swap");
-
-                if let Some(structured_txn) = self.transform_swap(&txn_meta, "Raydium").await {
-                    if let Err(e) = self
-                        .pubsub_manager
-                        .publish_transaction(structured_txn.clone())
-                        .await
-                    {
-                        println!("Failed to publish transaction to redis channel: {}", e);
-                    }
-
-                    if let Err(e) = self
-                        .structured_txn_queue
-                        .enqueue_message(structured_txn)
-                        .await
-                    {
-                        println!("Failed to enqueue structured transaction: {}", e);
-                    }
+        if let Some(dex_type) = self.detect_dex_type(&txn_meta.log_messages) {
+            if let Some(structured_txn) = self.transform_swap(&txn_meta, dex_type).await {
+                if let Err(e) = self.pubsub_manager.publish_transaction(structured_txn.clone()).await{
+                    println!("Failed to publish transaction to redis channel: {}", e);
                 }
-                break;
-            } else if message.contains("Swap2") || message.contains("Swap") {
-                println!("✅ Detected a Meteora Swap");
-                if let Some(structured_txn) = self.transform_swap(&txn_meta, "Meteora").await {
-                    if let Err(e) = self
-                        .pubsub_manager
-                        .publish_transaction(structured_txn.clone())
-                        .await
-                    {
-                        println!("Failed to publish transaction to redis channel: {}", e);
-                    }
 
-                    if let Err(e) = self
-                        .structured_txn_queue
-                        .enqueue_message(structured_txn)
-                        .await
-                    {
-                        println!("Failed to enqueue structured transaction: {}", e);
-                    }
+                if let Err(e) = self.structured_txn_queue.enqueue_message(structured_txn).await{
+                    println!("Failed to enqueue structured transaction: {}", e);
                 }
-                break;
+            };
+        };
+    }
+
+    fn detect_dex_type(&self, log_messages: &[String]) -> Option<&'static str> {
+        for log in log_messages {
+            if log.contains(RADUIM_CLMM) || log.contains(RADUIM_AMM_V4)
+            {
+                println!("Detected a Rayduim Swap");
+                return Some("Raydium");
+            }
+
+            if log.contains(ORCA_CLMM) {
+                println!("Detected a Orca Swap");
+                return Some("Orca");
+            }
+
+            if log.contains(METEORA_DLMM) || log.contains(METEORA_DAMM_V2) || log.contains(METEORA_DAMM_V1)
+            {
+                println!("Detected a Meteora Swap");
+                return Some("Meteora");
             }
         }
+        None
     }
 
     async fn analyze_swap(
@@ -237,7 +228,7 @@ impl TxnWorker {
             dex_tag = match dex_type {
                 "Raydium" => "CPMM".to_string(),
                 "Meteora" => "DLMM".to_string(),
-                _ => "UNKNOWN".to_string()
+                _ => "UNKNOWN".to_string(),
             };
         }
 
