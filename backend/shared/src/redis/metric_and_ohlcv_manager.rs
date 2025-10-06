@@ -176,7 +176,7 @@ impl MetricOHLCVManager {
         })
     }
 
-    pub async fn save_candle(&self, candle : OHLCVcandle) -> RedisResult<()>{
+    pub async fn save_candle(&self, candle : &OHLCVcandle) -> RedisResult<()>{
         let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
         let key = format!("candles:{}:{}", candle.token_pair, candle.timeframe);
         let candle_json = serde_json::to_string(&candle).expect("unable to serialize the candle");
