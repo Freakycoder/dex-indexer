@@ -1,0 +1,10 @@
+[package]
+name = "ohlcv_worker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+shared = { path = "../shared"}
+anyhow = "1.0.100"
+tokio = { version = "1.46.1", features = ["full"] }
+dotenvy = "0.15.7"
