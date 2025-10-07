@@ -1,7 +1,6 @@
 use dotenvy::dotenv;
 // use sea_orm::Database;
 use shared::{
-    queues::structured_txn_manager::StructeredTxnQueueManager,
     workers::ohlcv_worker::OHLCVWorker,
 };
 
@@ -24,9 +23,8 @@ async fn main() -> Result<(), anyhow::Error> {
     // println!();
 
     // Initialize queue manager
-    let structured_txn_queue = StructeredTxnQueueManager::new().expect("❌ Failed to create transaction queue manager");
-    let ohlcv_worker  = OHLCVWorker::new(structured_txn_queue);
-    ohlcv_worker.start_processing().await;
+    let ohlcv_worker  = OHLCVWorker::new();
+    ohlcv_worker.start_processing(std::env::var("CONSUMER_GROUP_OHLCV").expect("unable to find consumer group from env"), std::env::var("OHLCV_WORKER").expect("unable to find consume name from env")).await;
 
     Ok(())
 }
