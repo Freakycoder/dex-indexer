@@ -1,8 +1,9 @@
-use shared::{queues::structured_txn_manager::StructeredTxnQueueManager, workers::metrics_worker::MetricsWorker};
+use shared::{workers::metrics_worker::MetricsWorker};
+use dotenvy::dotenv;
 
 #[tokio::main]
 async fn main() {
-    let txn_queue_manager = StructeredTxnQueueManager::new().expect("Error in txn queue manager in metrics worker");
-    let metrics_worker = MetricsWorker::new(txn_queue_manager).expect("Error in metrics worker initialization");
-    metrics_worker.start_processing().await;
+    dotenv().ok();
+    let metrics_worker = MetricsWorker::new().expect("Error in metrics worker initialization");
+    metrics_worker.start_processing(std::env::var("CONSUMER_GROUP_METRIC").expect("unable to find consumer group from env"), std::env::var("METRIC_WORKER").expect("unable to find consume name from env")).await;
 }
