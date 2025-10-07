@@ -1,28 +1,36 @@
 use std::time::Duration;
 use tokio::time::sleep;
-use crate::{queues::structured_txn_manager::StructeredTxnQueueManager, redis::{metric_and_ohlcv_manager::MetricOHLCVManager, pubsub_manager::PubSubManager}, types::{ohlcv::{OHLCVcandle, TimeFrame}, worker::{StructeredTransaction, Type}}};
+use crate::{queues::{stream_manager::StreamManager}, redis::{metric_and_ohlcv_manager::MetricOHLCVManager, pubsub_manager::PubSubManager}, types::{ohlcv::{CandleTimeFrame, OHLCVcandle}, worker::{StructeredTransaction, Type}}};
 
 #[derive(Debug)]
 pub struct OHLCVWorker{
-    pub structured_txn_queue : StructeredTxnQueueManager,
     pub ohlcv_manager : MetricOHLCVManager,
-    pub pubsub_manager : PubSubManager
+    pub pubsub_manager : PubSubManager,
+    pub stream_manager : StreamManager
 }
 
 impl OHLCVWorker {
-    pub fn new(structured_txn_queue : StructeredTxnQueueManager) -> Self{
+    pub fn new() -> Self{
         let ohlcv_manager = MetricOHLCVManager::new().expect("unable to access ohlcv manager");
         let pubsub_manager = PubSubManager::new().expect("Unable to create pubsub for ohlcv");
-        Self { structured_txn_queue, ohlcv_manager, pubsub_manager }
+        let stream_manager = StreamManager::new().expect("unable to access stream from ohlcv worker");
+        Self {ohlcv_manager, pubsub_manager, stream_manager }
     }
 
-    pub async fn start_processing(&self) {
+    pub async fn start_processing(&self,  consumer_group: String, consumer_name: String) {
         println!("Worker started and waiting for messages...");
+        let _ = self.stream_manager.init_stream(&consumer_group).await;
         loop {
-            match self.structured_txn_queue.dequeue_message().await {
-                Ok(Some(txn_message)) => {
+            match self.stream_manager.consume(&consumer_group, &consumer_name).await {
+                Ok(Some(stream_data)) => {
                     println!("Got txn messsage from the queue");
-                    println!("Txn Metadata : {:?}", txn_message);
+                    println!("Txn Metadata : {:?}", stream_data.1);
+                    if let Err(e) = self.transform_data(stream_data.1).await{
+                        println!("Error tranforming the structured txn into ohlcv data : {}",e);
+                    };
+                    if let Err(e) = self.stream_manager.ack(&consumer_group, &stream_data.0).await{
+                        println!("Error in acknowledment of message {} : {}", stream_data.0, e);
+                    }
                 }
                 Ok(None) => {
                     println!("Queue empty, no message recieved");
@@ -39,7 +47,7 @@ impl OHLCVWorker {
     pub async fn transform_data(&self, txn : StructeredTransaction) -> Result<(), anyhow::Error>{
         let txn_timestamp = txn.date.timestamp();
         
-        for timeframe in TimeFrame::all(){
+        for timeframe in CandleTimeFrame::all(){
             let timeframe_str = timeframe.to_string();
             let candle_timestamp = timeframe.round_timestamp(txn_timestamp);
             println!(" {} : {} rounded to {}", timeframe_str, txn_timestamp, candle_timestamp);
@@ -57,7 +65,7 @@ impl OHLCVWorker {
         Ok(())
     }
 
-    async fn build_or_update_candle(&self, txn : &StructeredTransaction, timeframe : TimeFrame, candle_timestamp : i64) -> Result<OHLCVcandle, anyhow::Error>{
+    async fn build_or_update_candle(&self, txn : &StructeredTransaction, timeframe : CandleTimeFrame, candle_timestamp : i64) -> Result<OHLCVcandle, anyhow::Error>{
         let timeframe_str = timeframe.to_string();
 
        let existing_candle = self.ohlcv_manager.get_candle(&txn.token_pair, &timeframe_str, candle_timestamp).await?;
@@ -72,7 +80,7 @@ impl OHLCVWorker {
 
                     match txn.purchase_type {
                         Type::Buy => candle.buy_volume += txn.token_quantity,
-                        Type::Sell => candle.buy_volume += txn.token_quantity
+                        Type::Sell => candle.sell_volume += txn.token_quantity
                     }
                     println!("updated old candle for pair : {}", txn.token_pair);
                     candle
