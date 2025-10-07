@@ -1,5 +1,6 @@
+use crate::queues::stream_manager::StreamManager;
 use crate::queues::{
-    structured_txn_manager::StructeredTxnQueueManager, swap_txn_manager::SwapTxnQueueManager,
+ swap_txn_manager::SwapTxnQueueManager,
 };
 use crate::services::price_service::PriceService;
 use crate::{
@@ -27,25 +28,22 @@ struct SwapAnalysis {
 #[derive(Debug)]
 pub struct TxnWorker {
     swap_queue: SwapTxnQueueManager,
-    structured_txn_queue: StructeredTxnQueueManager,
+    stream_manager : StreamManager,
     pubsub_manager: PubSubManager,
     price_service: PriceService,
 }
 const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
 impl TxnWorker {
-    pub fn new(
-        swap_queue: SwapTxnQueueManager,
-        structured_txn_queue: StructeredTxnQueueManager,
-    ) -> Self {
-        let token_manager =
-            TokenSymbolManager::new().expect("Error creating a token symbol manager");
+    pub fn new(swap_queue: SwapTxnQueueManager) -> Self {
+        let token_manager = TokenSymbolManager::new().expect("Error creating a token symbol manager");
         let pubsub_manager = PubSubManager::new().expect("Error creating pubsub manager");
+        let stream_manager = StreamManager::new().expect("unable to access stream from txn worker");
         Self {
             swap_queue,
-            structured_txn_queue,
             pubsub_manager,
             price_service: PriceService::new(token_manager),
+            stream_manager
         }
     }
 
@@ -76,8 +74,8 @@ impl TxnWorker {
                     println!("Failed to publish transaction to redis channel: {}", e);
                 }
 
-                if let Err(e) = self.structured_txn_queue.enqueue_message(structured_txn).await{
-                    println!("Failed to enqueue structured transaction: {}", e);
+                if let Err(e) = self.stream_manager.publish(structured_txn).await{
+                    println!("Failed to publish structured transaction into streams: {}", e);
                 }
             };
         };
