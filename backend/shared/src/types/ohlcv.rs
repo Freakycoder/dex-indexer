@@ -16,7 +16,7 @@ pub struct OHLCVcandle{
 }
 
 #[derive(Debug)]
-pub enum TimeFrame{
+pub enum CandleTimeFrame{
     OneSecond,
     OneMinute,
     FiveMinutes,
@@ -26,50 +26,50 @@ pub enum TimeFrame{
     OneWeek
 }
 
-impl TimeFrame {
+impl CandleTimeFrame {
     pub fn to_string(&self) -> String{
         match self{
-            TimeFrame::OneSecond => "1s".to_string(),
-            TimeFrame::OneMinute => "1s".to_string(),
-            TimeFrame::FiveMinutes => "1s".to_string(),
-            TimeFrame::OneHour => "1s".to_string(),
-            TimeFrame::FourHours => "1s".to_string(),
-            TimeFrame::OneDay => "1s".to_string(),
-            TimeFrame::OneWeek => "1s".to_string(),
+            CandleTimeFrame::OneSecond => "1s".to_string(),
+            CandleTimeFrame::OneMinute => "1m".to_string(),
+            CandleTimeFrame::FiveMinutes => "5m".to_string(),
+            CandleTimeFrame::OneHour => "1h".to_string(),
+            CandleTimeFrame::FourHours => "4h".to_string(),
+            CandleTimeFrame::OneDay => "1d".to_string(),
+            CandleTimeFrame::OneWeek => "1w".to_string(),
         }
     }
 
     pub fn to_seconds(&self) -> i64{
          match self{
-            TimeFrame::OneSecond => 1,
-            TimeFrame::OneMinute => 60,
-            TimeFrame::FiveMinutes => 300,
-            TimeFrame::OneHour => 3600,
-            TimeFrame::FourHours => 14400,
-            TimeFrame::OneDay => 86400,
-            TimeFrame::OneWeek => 604800,
+            CandleTimeFrame::OneSecond => 1,
+            CandleTimeFrame::OneMinute => 60,
+            CandleTimeFrame::FiveMinutes => 300,
+            CandleTimeFrame::OneHour => 3600,
+            CandleTimeFrame::FourHours => 14400,
+            CandleTimeFrame::OneDay => 86400,
+            CandleTimeFrame::OneWeek => 604800,
         }
     }
-    pub fn all() -> Vec<TimeFrame>{
+    pub fn all() -> Vec<CandleTimeFrame>{
         vec![
-            TimeFrame::OneSecond,
-            TimeFrame::OneMinute,
-            TimeFrame::FiveMinutes,
-            TimeFrame::OneHour,
-            TimeFrame::FourHours,
-            TimeFrame::OneDay,
-            TimeFrame::OneWeek
+            CandleTimeFrame::OneSecond,
+            CandleTimeFrame::OneMinute,
+            CandleTimeFrame::FiveMinutes,
+            CandleTimeFrame::OneHour,
+            CandleTimeFrame::FourHours,
+            CandleTimeFrame::OneDay,
+            CandleTimeFrame::OneWeek
         ]
     }
     pub fn round_timestamp(&self, txn_timestamp : i64) -> i64{
         match self{
-            TimeFrame::OneSecond => 1,
-            TimeFrame::OneMinute => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
-            TimeFrame::FiveMinutes => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
-            TimeFrame::OneHour => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
-            TimeFrame::FourHours => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
-            TimeFrame::OneDay => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
-            TimeFrame::OneWeek => {(txn_timestamp / self.to_seconds()) * self.to_seconds()}
+            CandleTimeFrame::OneSecond => 1,
+            CandleTimeFrame::OneMinute => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
+            CandleTimeFrame::FiveMinutes => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
+            CandleTimeFrame::OneHour => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
+            CandleTimeFrame::FourHours => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
+            CandleTimeFrame::OneDay => {(txn_timestamp / self.to_seconds()) * self.to_seconds()},
+            CandleTimeFrame::OneWeek => {(txn_timestamp / self.to_seconds()) * self.to_seconds()}
         }
     }
 }
