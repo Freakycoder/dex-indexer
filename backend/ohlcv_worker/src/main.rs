@@ -24,7 +24,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Initialize queue manager
     let ohlcv_worker  = OHLCVWorker::new();
-    ohlcv_worker.start_processing(std::env::var("CONSUMER_GROUP_OHLCV").expect("unable to find consumer group from env"), std::env::var("OHLCV_WORKER").expect("unable to find consume name from env")).await;
+    ohlcv_worker.start_processing(std::env::var("OHLCV_CONSUMER_GROUP").expect("unable to find consumer group from env"), std::env::var("OHLCV_WORKER").expect("unable to find consume name from env")).await;
 
     Ok(())
 }
