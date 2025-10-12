@@ -1,7 +1,2 @@
-[package]
-name = "backend"
-version = "0.1.0"
-edition = "2021"
-
 [workspace]
 members = [ "api_server", "grpc_server" , "shared", "metrics_service", "txn_worker", "metrics_worker", "ohlcv_worker"]
