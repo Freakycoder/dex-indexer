@@ -1,3 +1,5 @@
+version: '3.9'
+
 services:
 
   redis:
@@ -13,7 +15,11 @@ services:
       - "3000:3000"
 
   api_server:
-    build: ./backend
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        - REDIS_URL=${REDIS_URL}
     command: ["/dex_backend_runtime/api_server"]
     ports:
       - "8080:8080"
@@ -21,7 +27,7 @@ services:
       - ./backend/.env
     depends_on:
       - redis
-
+      
   grpc_server:
     build: ./backend
     command: ["/dex_backend_runtime/grpc_server"]
