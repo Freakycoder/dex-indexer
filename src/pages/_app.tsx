@@ -33,6 +33,30 @@ export default function App({ Component, pageProps }: AppProps) {
           `,
         }}
       />
+      <style jsx global>{`
+        .scrollbar-thin::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        
+        .scrollbar-thin::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+          background: #374151;
+          border-radius: 9999px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+          background: #4b5563;
+        }
+
+        /* Smooth transitions */
+        * {
+          scroll-behavior: smooth;
+        }
+      `}</style>
       <WebSocketProvider url="ws://localhost:3001/ws">
         <Component {...pageProps} />
       </WebSocketProvider>

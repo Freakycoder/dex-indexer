@@ -4,7 +4,7 @@ WORKDIR /frontend
 
 COPY package.json ./
 
-RUN corepack enable && pnpm install
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY . ./
 
@@ -13,6 +13,8 @@ RUN pnpm build
 FROM node:20-alpine AS runtime
 
 WORKDIR /frontend_runtime
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY --from=builder /frontend/package*.json ./
 COPY --from=builder /frontend/.next ./.next

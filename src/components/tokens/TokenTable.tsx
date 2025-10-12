@@ -34,15 +34,6 @@ export const TokenTable: React.FC<TokenTableProps> = ({
           <th className="px-3 py-3 text-left text-xs text-gray-500 font-normal w-12">#</th>
           <th className="px-3 py-3 text-left text-xs text-gray-500 font-normal">
             <button 
-              onClick={() => onSort('token')} 
-              className="flex items-center space-x-1 hover:text-white transition-colors"
-            >
-              <span>TOKEN</span>
-              {getSortIcon('token') && <span className="ml-1">{getSortIcon('token')}</span>}
-            </button>
-          </th>
-          <th className="px-3 py-3 text-left text-xs text-gray-500 font-normal">
-            <button 
               onClick={() => onSort('price')} 
               className="flex items-center space-x-1 hover:text-white transition-colors"
             >
@@ -108,7 +99,7 @@ export const TokenTable: React.FC<TokenTableProps> = ({
       <tbody>
         {tokens.map((token, index) => (
           <TokenRow 
-            key={`${token.token}-${index}`} 
+            key={`${token.tokenName}-${index}`} 
             token={token} 
             index={(currentPage - 1) * itemsPerPage + index}
             onTokenClick={onTokenClick}
