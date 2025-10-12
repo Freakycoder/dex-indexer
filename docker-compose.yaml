@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: .
+    ports:
+      - "3000:3000"
+
+  api_server:
+    build: ./backend
+    command: ["/dex_backend_runtime/api_server"]
+    ports:
+      - "8080:8080"
+
+  grpc_server:
+    build: ./backend
+    command: ["dex_backend_runtime/grpc_server"]
+    ports:
+      - "50051:50051"
+
+  metrics_worker:
+    build: ./backend
+    command: ["dex_backend_runtime/metrics_worker"]
+
+  ohlcv_worker:
+    build: ./backend
+    command: ["dex_backend_runtime/ohlcv_worker"]
+
+  txn_worker:
+    build: ./backend
+    command: ["dex_backend_runtime/txn_worker"]
+
+  metrics_service:
+    build: ./backend
+    command: ["dex_backend_runtime/metrics_service"]
