@@ -3,13 +3,13 @@ FROM rust:1.80 AS builder
 WORKDIR /dex_backend
 # we can also write ./ instead of /dex_backend/ since (.) dot represent pwd 
 COPY Cargo.toml Cargo.lock ./
-COPY api_server/Cargo.toml ./api_server
-COPY grpc_server/Cargo.toml ./grpc_server
-COPY metrics_service/Cargo.toml ./metrics_service
-COPY metrics_worker/Cargo.toml ./metrics_worker
-COPY ohlcv_worker/Cargo.toml ./ohlcv_worker
-COPY shared/Cargo.toml ./shared
-COPY txn_worker/Cargo.toml ./txn_worker
+COPY api_server/Cargo.toml ./api_server/
+COPY grpc_server/Cargo.toml ./grpc_server/
+COPY metrics_service/Cargo.toml ./metrics_service/
+COPY metrics_worker/Cargo.toml ./metrics_worker/
+COPY ohlcv_worker/Cargo.toml ./ohlcv_worker/
+COPY shared/Cargo.toml ./shared/
+COPY txn_worker/Cargo.toml ./txn_worker/
 # once we have the crates in pwd then we need to fetch them from cargo registry to execute the code
 RUN cargo fetch
 # now copy the source code ignoring the files present in .dockerignore from local host to docker
