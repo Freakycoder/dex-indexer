@@ -1,4 +1,4 @@
-FROM rust:1.83 AS builder
+FROM rust:latest AS builder
 # creates a working directory inside the docker container. whenever we copy files from host machine it goes to /app in docker container
 WORKDIR /dex_backend
 # we can also write ./ instead of /dex_backend/ since (.) dot represent pwd 
