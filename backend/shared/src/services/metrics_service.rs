@@ -25,8 +25,7 @@ impl MetricsService {
         let metrics_manager = MetricOHLCVManager::new().expect("Error creating metric manager");
         let pubsub_manager = PubSubManager::new().expect("Error creating pubsub manager");
 
-        let redis_url = "redis://localhost:6379";
-        let redis_client = Client::open(redis_url).map_err(|e| {
+        let redis_client = Client::open(std::env::var("REDIS_URL").expect("unable to fetch redis url from env")).map_err(|e| {
             println!("Couldn't initialize a redis client : {}", e);
             e
         })?; 

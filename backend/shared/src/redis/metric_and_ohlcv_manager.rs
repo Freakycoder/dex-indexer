@@ -34,8 +34,7 @@ pub struct MetricOHLCVManager {
 impl MetricOHLCVManager {
     pub fn new() -> Result<Self, RedisError> {
         println!("Initializing redis client...for METRIC OHLCV cache");
-        let redis_url = "redis://localhost:6379";
-        let redis_client = Client::open(redis_url).map_err(|e| {
+        let redis_client = Client::open(std::env::var("REDIS_URL").expect("unable to fetch redis url from env")).map_err(|e| {
             println!("Couldn't initialize a redis client : {}", e);
             e
         })?;
@@ -52,8 +51,8 @@ impl MetricOHLCVManager {
         let history_key = format!("token:{}:history-price", token_pair);
         let history_price_entry = format!("{}:{}", Utc::now().timestamp(), price_usd);
 
-        conn.lpush(&history_key, history_price_entry).await?;
-        conn.ltrim(history_key, 0, 3000).await?;
+        let _: () = conn.lpush(&history_key, history_price_entry).await?;
+        let _: () = conn.ltrim(history_key, 0, 3000).await?;
         println!("updated current price and pushed to historical price for : {}", token_pair);
         Ok(())
     }
@@ -63,8 +62,8 @@ impl MetricOHLCVManager {
         let mkc_key = format!("token:{}:market-cap" , token_pair);
         let fdv_key = format!("token:{}:fdv", token_pair);
 
-        conn.set(mkc_key, market_cap).await?;
-        conn.set(fdv_key, fdv).await?;
+        let _: () = conn.set(mkc_key, market_cap).await?;
+        let _: () = conn.set(fdv_key, fdv).await?;
         println!("updated current market cap and fdv for : {}", token_pair);
         Ok(())
     }
@@ -78,23 +77,23 @@ impl MetricOHLCVManager {
 
         // calculate volume ( buy vol + sell vol), txns (buys + sells) and makers (buyers + sellers) from the following.
         if is_buy{
-            conn.hincr(&stats_key, "buys", 1).await?;
+            let _: () = conn.hincr(&stats_key, "buys", 1).await?;
             if let Some(usd_value) = txn.usd_value {
-                conn.hincr(&stats_key, "buy_volume", usd_value).await?;
+                let _: () = conn.hincr(&stats_key, "buy_volume", usd_value).await?;
             }            
-            conn.sadd(&buyers_key, txn.owner).await?;
+            let _: () = conn.sadd(&buyers_key, txn.owner).await?;
 
         }
         else {
-            conn.hincr(&stats_key, "sells", 1).await?;
+            let _: () = conn.hincr(&stats_key, "sells", 1).await?;
             if let Some(usd_value) = txn.usd_value {
-                conn.hincr(&stats_key, "sell_volume", usd_value).await?;
+                let _: () = conn.hincr(&stats_key, "sell_volume", usd_value).await?;
             }            
-            conn.sadd(&sellers_key, txn.owner).await?;
+            let _: () = conn.sadd(&sellers_key, txn.owner).await?;
         }
-        conn.expire(stats_key, 86400).await?;
-        conn.expire(buyers_key, 86400).await?;
-        conn.expire(sellers_key, 86400).await?;
+        let _: () = conn.expire(stats_key, 86400).await?;
+        let _: () = conn.expire(buyers_key, 86400).await?;
+        let _: () = conn.expire(sellers_key, 86400).await?;
         println!("Updated period stats for token pair : {}", txn.token_pair);
         Ok(())
     }
@@ -180,11 +179,11 @@ impl MetricOHLCVManager {
         let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
         let key = format!("candles:{}:{}", candle.token_pair, candle.timeframe);
         let candle_json = serde_json::to_string(&candle).expect("unable to serialize the candle");
-        conn.zadd(&key, candle_json, candle.timestamp).await?;
+        let _: () = conn.zadd(&key, candle_json, candle.timestamp).await?;
         let cutoff = Utc::now().timestamp() - 172800;
-        conn.zrembyscore(&key, "-inf", cutoff).await?;
+        let _: () = conn.zrembyscore(&key, "-inf", cutoff).await?;
 
-        conn.expire(&key, 172800).await?;
+        let _: () = conn.expire(&key, 172800).await?;
         println!("Saved candle for token-pair : {} : {} @ {}", candle.token_pair, candle.timeframe, candle.timestamp);
         Ok(())
     }

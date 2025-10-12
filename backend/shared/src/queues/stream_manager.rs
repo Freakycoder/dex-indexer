@@ -11,8 +11,7 @@ pub struct StreamManager{
 impl StreamManager {
     pub fn new() -> RedisResult<Self> {
         println!("Initializing Redis Stream Manager...");
-        let redis_url = "redis://localhost:6379";
-        let redis_client = Client::open(redis_url).map_err(|e| {
+        let redis_client = Client::open(std::env::var("REDIS_URL").expect("unable to fetch redis url from env")).map_err(|e| {
             println!("Couldn't initialize redis client: {}", e);
             e
         })?;

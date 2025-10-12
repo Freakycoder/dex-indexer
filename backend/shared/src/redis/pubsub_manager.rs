@@ -26,8 +26,7 @@ pub struct PubSubManager {
 impl PubSubManager {
     pub fn new() -> Result<Self, RedisError> {
         println!("🔔 Initializing PubSub Manager...");
-        let redis_url = "redis://localhost:6379";
-        let redis_client = Client::open(redis_url)?;
+        let redis_client = Client::open(std::env::var("REDIS_URL").expect("unable to fetch redis url from env"))?;
         Ok(Self { redis_client })
     }
 
@@ -43,7 +42,7 @@ impl PubSubManager {
                 e
             })?;
     
-        conn.publish("transactions", message_json).await?;
+        let _: () = conn.publish("transactions", message_json).await?;
         
         println!("📤 Published transaction for {}", transaction.token_pair);
         Ok(())
@@ -61,7 +60,7 @@ impl PubSubManager {
                 e
             })?;
         
-        conn.publish("price_metrics", message_json).await?;
+        let _: () = conn.publish("price_metrics", message_json).await?;
         
         println!("📤 Published price and metrics update for {}", updated_data.token_pair);
         Ok(())
@@ -85,7 +84,7 @@ impl PubSubManager {
                 e
             })?;
     
-        conn.publish("current_price", message_json).await?;
+        let _: () = conn.publish("current_price", message_json).await?;
         
         println!("📤 Published current price for {}", token_pair);
         Ok(())
@@ -98,7 +97,7 @@ impl PubSubManager {
                 println!("Error serializing the candle data");
                 e
             })?;
-        conn.publish("candle_price", candle_json).await?;
+        let _: () = conn.publish("candle_price", candle_json).await?;
         println!("Published candle update for token : {}", candle.token_pair);
         Ok(())
     }
@@ -118,10 +117,10 @@ impl PubSubManager {
 
     async fn subscription_loop(client : Client, tx : mpsc::UnboundedSender<PubSubMessage>) -> RedisResult<()>{
         let mut pubsub = client.get_async_pubsub().await?;
-        pubsub.subscribe("transactions").await?; // subscribe to both channels
-        pubsub.subscribe("price_metrics").await?;
-        pubsub.subscribe("current_price").await?;
-        pubsub.subscribe("candle_price").await?;
+        let _: () = pubsub.subscribe("transactions").await?; // subscribe to both channels
+        let _: () = pubsub.subscribe("price_metrics").await?;
+        let _: () = pubsub.subscribe("current_price").await?;
+        let _: () = pubsub.subscribe("candle_price").await?;
 
         println!("Subs to redis channel");
         let mut pubsub_stream = pubsub.into_on_message();
