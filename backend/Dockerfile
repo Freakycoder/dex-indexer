@@ -1,6 +1,11 @@
 FROM rust:latest AS builder
 # creates a working directory inside the docker container. whenever we copy files from host machine it goes to /app in docker container
 WORKDIR /dex_backend
+
+ARG REDIS_URL
+
+ENV REDIS_URL=${REDIS_URL}
+
 # we can also write ./ instead of /dex_backend/ since (.) dot represent pwd 
 COPY Cargo.toml Cargo.lock ./
 COPY api_server/Cargo.toml ./api_server/
