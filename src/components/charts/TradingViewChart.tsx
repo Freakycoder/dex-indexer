@@ -4,9 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   createChart,
   IChartApi,
-  CandlestickData,
   UTCTimestamp,
-  HistogramData,
   ISeriesApi,
   LineStyle,
   ColorType,
@@ -16,6 +14,7 @@ import {
 import {
   TransactionData,
   useGlobalWebSocket,
+  CandleData,
 } from "@/context/WebsocketContext";
 import { ChartToolbar } from "./ChartToolbar";
 
@@ -26,17 +25,6 @@ interface TradingViewChartProps {
 }
 
 type Timeframe = "1s" | "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "1w";
-
-interface CandleAggregation {
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  timestamp: number;
-  buyVolume: number;
-  sellVolume: number;
-}
 
 interface OHLCVData {
   open: number;
@@ -60,6 +48,10 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const currentPriceLineRef = useRef<any>(null);
+  
+  // Track last candle timestamp to detect updates vs new candles
+  const lastCandleTimestampRef = useRef<Map<string, number>>(new Map());
+  const isInitializedRef = useRef<Map<string, boolean>>(new Map());
 
   const [timeframe, setTimeframe] = useState<Timeframe>("15m");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -136,7 +128,6 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       },
     });
 
-    // Create candlestick series
     const candlestickSeriesInstance = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
       downColor: "#ef4444",
@@ -168,7 +159,6 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
     });
 
     volumeSeriesRef.current = volumeSeriesInstance;
-
     chartRef.current = chart;
 
     const handleResize = () => {
@@ -198,6 +188,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
     };
   }, [height, isFullscreen]);
 
+  // Handle candle updates
   useEffect(() => {
     if (
       !chartRef.current ||
@@ -207,42 +198,168 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       return;
 
     const candles = getRoomCandles(tokenPair, timeframe);
+    
+    if (!candles || candles.length === 0) {
+      console.log(`📊 No candles available for ${tokenPair} ${timeframe}`);
+      return;
+    }
 
-    // stop early if no valid candles
-    if (!candles || candles.length === 0) return;
+    const key = `${tokenPair}-${timeframe}`;
+    const isInitialized = isInitializedRef.current.get(key);
+    const lastTimestamp = lastCandleTimestampRef.current.get(key);
 
-    const formattedCandles = candles
-      .filter((c) => c && c.timestamp && c.close != null) // ensure data integrity
-      .map((c) => ({
+    // Sort candles by timestamp
+    const sortedCandles = [...candles].sort((a, b) => a.timestamp - b.timestamp);
+
+    if (!isInitialized || !lastTimestamp) {
+      // Initial load - use setData
+      console.log(`📊 Initial load: ${sortedCandles.length} candles for ${tokenPair} ${timeframe}`);
+      
+      const formattedCandles = sortedCandles
+        .filter((c) => c && c.timestamp && c.close != null)
+        .map((c) => ({
+          time: Math.floor(c.timestamp / 1000) as UTCTimestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        }));
+
+      const formattedVolume = sortedCandles.map((c) => ({
         time: Math.floor(c.timestamp / 1000) as UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
+        value: c.volume ?? 0,
+        color: (c.buy_volume ?? 0) > (c.sell_volume ?? 0) ? "#22c55e80" : "#ef444480",
       }));
 
-    if (formattedCandles.length === 0) return; // still empty? skip
+      if (formattedCandles.length > 0) {
+        candlestickSeriesRef.current.setData(formattedCandles);
+        volumeSeriesRef.current.setData(formattedVolume);
+        
+        isInitializedRef.current.set(key, true);
+        lastCandleTimestampRef.current.set(key, sortedCandles[sortedCandles.length - 1].timestamp);
+        
+        const latest = formattedCandles[formattedCandles.length - 1];
+        const prev = formattedCandles[formattedCandles.length - 2];
+        
+        updateOHLCVDisplay(latest, prev, formattedVolume);
+        updateCurrentPriceLine(latest.close);
+        chartRef.current.timeScale().fitContent();
+      }
+    } else {
+      // Live update - use update() for last candle or new candles
+      const latestCandle = sortedCandles[sortedCandles.length - 1];
+      
+      if (latestCandle.timestamp === lastTimestamp) {
+        // Update existing candle
+        console.log(`🔄 Updating candle for ${tokenPair} ${timeframe} at ${latestCandle.timestamp}`);
+        
+        const formattedCandle = {
+          time: Math.floor(latestCandle.timestamp / 1000) as UTCTimestamp,
+          open: latestCandle.open,
+          high: latestCandle.high,
+          low: latestCandle.low,
+          close: latestCandle.close,
+        };
 
-    const formattedVolume = candles.map((c) => ({
-      time: Math.floor(c.timestamp / 1000) as UTCTimestamp,
-      value: c.volume ?? 0,
-      color:
-        (c.buy_volume ?? 0) > (c.sell_volume ?? 0) ? "#22c55e80" : "#ef444480",
-    }));
+        const formattedVolume = {
+          time: Math.floor(latestCandle.timestamp / 1000) as UTCTimestamp,
+          value: latestCandle.volume ?? 0,
+          color: (latestCandle.buy_volume ?? 0) > (latestCandle.sell_volume ?? 0) 
+            ? "#22c55e80" 
+            : "#ef444480",
+        };
 
-    candlestickSeriesRef.current.setData(formattedCandles);
-    volumeSeriesRef.current.setData(formattedVolume);
+        candlestickSeriesRef.current.update(formattedCandle);
+        volumeSeriesRef.current.update(formattedVolume);
+        
+        // Get previous candle for comparison
+        const prevCandle = sortedCandles[sortedCandles.length - 2];
+        const prevFormatted = prevCandle ? {
+          time: Math.floor(prevCandle.timestamp / 1000) as UTCTimestamp,
+          open: prevCandle.open,
+          high: prevCandle.high,
+          low: prevCandle.low,
+          close: prevCandle.close,
+        } : undefined;
+        
+        updateOHLCVDisplay(formattedCandle, prevFormatted, [formattedVolume]);
+        updateCurrentPriceLine(formattedCandle.close);
+      } else if (latestCandle.timestamp > lastTimestamp) {
+        // New candle(s) - append them
+        console.log(`✨ New candle(s) for ${tokenPair} ${timeframe}`);
+        
+        // Get all candles after last timestamp
+        const newCandles = sortedCandles.filter(c => c.timestamp > lastTimestamp);
+        
+        newCandles.forEach(candle => {
+          const formattedCandle = {
+            time: Math.floor(candle.timestamp / 1000) as UTCTimestamp,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+          };
 
-    // ✅ safely access last and previous candle
-    const latest = formattedCandles.at(-1);
-    const prev = formattedCandles.at(-2);
+          const formattedVolume = {
+            time: Math.floor(candle.timestamp / 1000) as UTCTimestamp,
+            value: candle.volume ?? 0,
+            color: (candle.buy_volume ?? 0) > (candle.sell_volume ?? 0) 
+              ? "#22c55e80" 
+              : "#ef444480",
+          };
 
-    if (!latest) return; // still no candle, nothing to update
+          candlestickSeriesRef.current!.update(formattedCandle);
+          volumeSeriesRef.current!.update(formattedVolume);
+        });
+        
+        lastCandleTimestampRef.current.set(key, latestCandle.timestamp);
+        
+        const formattedLatest = {
+          time: Math.floor(latestCandle.timestamp / 1000) as UTCTimestamp,
+          open: latestCandle.open,
+          high: latestCandle.high,
+          low: latestCandle.low,
+          close: latestCandle.close,
+        };
+        
+        const prevCandle = sortedCandles[sortedCandles.length - 2];
+        const prevFormatted = prevCandle ? {
+          time: Math.floor(prevCandle.timestamp / 1000) as UTCTimestamp,
+          open: prevCandle.open,
+          high: prevCandle.high,
+          low: prevCandle.low,
+          close: prevCandle.close,
+        } : undefined;
+        
+        updateOHLCVDisplay(formattedLatest, prevFormatted, [{
+          time: formattedLatest.time,
+          value: latestCandle.volume ?? 0,
+          color: (latestCandle.buy_volume ?? 0) > (latestCandle.sell_volume ?? 0) 
+            ? "#22c55e80" 
+            : "#ef444480",
+        }]);
+        updateCurrentPriceLine(formattedLatest.close);
+      }
+    }
+  }, [tokenPair, timeframe, getRoomCandles]);
+
+  // Reset initialization when timeframe changes
+  useEffect(() => {
+    const key = `${tokenPair}-${timeframe}`;
+    isInitializedRef.current.set(key, false);
+    lastCandleTimestampRef.current.delete(key);
+  }, [timeframe, tokenPair]);
+
+  const updateOHLCVDisplay = (
+    latest: any,
+    prev: any | undefined,
+    volumeData: any[]
+  ) => {
+    if (!latest) return;
 
     const change = prev ? latest.close - prev.close : 0;
     const changePercent = prev ? (change / prev.close) * 100 : 0;
-
-    const totalVolume = formattedVolume.reduce((sum, v) => sum + v.value, 0);
+    const totalVolume = volumeData.reduce((sum, v) => sum + v.value, 0);
 
     setOhlcvData({
       open: latest.open,
@@ -253,12 +370,8 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       change,
       changePercent,
     });
+  };
 
-    updateCurrentPriceLine(latest.close);
-    chartRef.current.timeScale().fitContent();
-  }, [tokenPair, timeframe, getRoomCandles]);
-
-  // Update current price line
   const updateCurrentPriceLine = (price: number) => {
     if (!candlestickSeriesRef.current) return;
 
@@ -274,29 +387,6 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       axisLabelVisible: true,
       title: "",
     });
-  };
-
-  const getTimeframeMs = (tf: Timeframe): number => {
-    switch (tf) {
-      case "1s":
-        return 1 * 1000;
-      case "1m":
-        return 1 * 60 * 1000;
-      case "5m":
-        return 5 * 60 * 1000;
-      case "15m":
-        return 15 * 60 * 1000;
-      case "1h":
-        return 60 * 60 * 1000;
-      case "4h":
-        return 4 * 60 * 60 * 1000;
-      case "1d":
-        return 24 * 60 * 60 * 1000;
-      case "1w":
-        return 7 * 24 * 60 * 60 * 1000;
-      default:
-        return 15 * 60 * 1000;
-    }
   };
 
   const formatPrice = (price: number): string => {
@@ -402,7 +492,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
               Loading chart data...
             </div>
             <div className="text-gray-600 text-xs mt-1">
-              Waiting for {tokenPair} transactions
+              Waiting for {tokenPair} candles
             </div>
           </div>
         </div>
