@@ -1,0 +1,32 @@
+name: Keep Render Backend Awake
+
+on:
+  schedule:
+    # Run every 14 minutes
+    - cron: '*/14 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Ping Render Backend
+        run: |
+          echo "🔔 Pinging backend at $(date)"
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://dex-backend-xxxx.onrender.com/api/health)
+          
+          if [ $response -eq 200 ]; then
+            echo "✅ Backend is healthy (HTTP $response)"
+          else
+            echo "⚠️ Backend returned HTTP $response"
+            exit 1
+          fi
+      
+      - name: Log Success
+        if: success()
+        run: echo "✅ Keep-alive ping successful at $(date)"
+      
+      - name: Log Failure
+        if: failure()
+        run: echo "❌ Keep-alive ping failed at $(date)"
