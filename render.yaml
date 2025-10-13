@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: dex-backend
+    env: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: REDIS_URL
+        sync: false
+      - key: GRPC_URL
+        sync: false
+      - key: GRPC_TOKEN
+        sync: false
+      - key: HELIUS_URL
+        sync: false
+      - key: METRICS_CONSUMER_GROUP
+        value: metrics_group
+      - key: METRICS_WORKER
+        value: metrics_worker_1
+      - key: OHLCV_CONSUMER_GROUP
+        value: ohlcv_group
+      - key: OHLCV_WORKER
+        value: ohlcv_worker_1
