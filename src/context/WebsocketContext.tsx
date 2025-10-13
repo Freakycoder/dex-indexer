@@ -3,20 +3,20 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 export interface TransactionData {
   date: string;
   purchase_type: 'Buy' | 'Sell';
-  usd_value: number | null; // Note: backend uses usd_value, not just usd
+  usd_value: number | null;
   token_quantity: number;
   token_price: number;
   owner: string;
   dex_type: string;
-  dex_tag : string;
+  dex_tag: string;
   token_pair: string;
   token_name: string;
 }
 
 export interface CandleData {
   token_pair: string;
-  timeframe: '1s' |'1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
-  timestamp: number;
+  timeframe: '1s' | '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
+  timestamp: number; // Unix timestamp in milliseconds
   open: number;
   high: number;
   low: number;
@@ -24,8 +24,8 @@ export interface CandleData {
   volume: number;
   buy_volume: number;
   sell_volume: number;
+  trade_count?: number;
 }
-
 
 export interface PeriodStats {
   txns: number;
@@ -49,7 +49,7 @@ export interface PeriodStatsUpdate {
 export interface PriceInfo {
   usd_current_price: number;
   sol_relative_price: number;
-  token_pair?: string; // Added for routing purposes
+  token_pair?: string;
 }
 
 export interface TokenMetrics {
@@ -70,23 +70,21 @@ export interface WebSocketRoom {
   transactions: TransactionData[];
   metrics: TokenMetrics;
   subscribers: Set<string>;
-  candles : Map<string, CandleData[]>;
+  candles: Map<string, CandleData[]>;
 }
 
 export interface GlobalWebSocketContextType {
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
-  
   rooms: Map<string, WebSocketRoom>;
   activeRooms: string[];
-  
   joinRoom: (roomId: string, subscriberId: string) => void;
   leaveRoom: (roomId: string, subscriberId: string) => void;
   getRoomTransactions: (roomId: string) => TransactionData[];
   getRoomMetrics: (roomId: string) => TokenMetrics | null;
+  getRoomCandles: (roomId: string, timeframe: string) => CandleData[];
   connect: () => void;
   disconnect: () => void;
   getAllTransactions: () => TransactionData[];
-  getRoomCandles : (roomId : string, timeframe : string) => CandleData[];
 }
 
 const WebSocketContext = createContext<GlobalWebSocketContextType | null>(null);
@@ -128,7 +126,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
         liquidity: 0,
       },
       subscribers: new Set(),
-      candles : new Map()
+      candles: new Map()
     };
   };
 
@@ -146,10 +144,8 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       const room = newRooms.get(tokenPair)!;
       room.transactions = [transaction, ...room.transactions].slice(0, 100);
       
-      // Update current price from transaction
       if (transaction.token_price) {
         room.metrics.currentPriceUSD = transaction.token_price;
-        // Calculate SOL price (assuming SOL is around $100, this should come from backend)
         room.metrics.currentPriceSOL = transaction.token_price / 100;
       }
       
@@ -172,7 +168,6 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       
       const room = newRooms.get(update.token_pair)!;
       
-      // Map timeframe to metrics key
       const timeframeMap: Record<string, keyof TokenMetrics> = {
         'FiveMins': '5m',
         'OneHour': '1h',
@@ -214,28 +209,43 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   }, []);
 
   const addCandleToRoom = useCallback((candle: CandleData) => {
-  setRooms(prevRooms => {
-    const newRooms = new Map(prevRooms);
+    setRooms(prevRooms => {
+      const newRooms = new Map(prevRooms);
 
-    const room = newRooms.get(candle.token_pair)!;
-    const existingCandles = room.candles.get(candle.timeframe) || [];
+      // Ensure room exists
+      if (!newRooms.has(candle.token_pair)) {
+        newRooms.set(candle.token_pair, initializeRoom(candle.token_pair));
+        console.log(`🏠 Created new room for candle: ${candle.token_pair}`);
+      }
 
-    // Check if candle timestamp already exists — replace or append
-    const existingIndex = existingCandles.findIndex(c => c.timestamp === candle.timestamp);
-    if (existingIndex >= 0) {
-      existingCandles[existingIndex] = candle;
-    } else {
-      existingCandles.push(candle);
-      if (existingCandles.length > 500) existingCandles.shift(); // limit cache size
-    }
+      const room = newRooms.get(candle.token_pair)!;
+      const existingCandles = room.candles.get(candle.timeframe) || [];
 
-    room.candles.set(candle.timeframe, existingCandles);
-    console.log(`🕒 Candle update: ${candle.token_pair} (${candle.timeframe})`);
+      // Check if candle already exists - update it, otherwise append
+      const existingIndex = existingCandles.findIndex(c => c.timestamp === candle.timestamp);
+      
+      let updatedCandles: CandleData[];
+      if (existingIndex >= 0) {
+        // Update existing candle
+        updatedCandles = [...existingCandles];
+        updatedCandles[existingIndex] = candle;
+        console.log(`🔄 Updated candle: ${candle.token_pair} ${candle.timeframe} @ ${new Date(candle.timestamp).toISOString()}`);
+      } else {
+        // Append new candle and sort by timestamp
+        updatedCandles = [...existingCandles, candle].sort((a, b) => a.timestamp - b.timestamp);
+        console.log(`✨ New candle: ${candle.token_pair} ${candle.timeframe} @ ${new Date(candle.timestamp).toISOString()}`);
+        
+        // Limit to last 1000 candles per timeframe
+        if (updatedCandles.length > 1000) {
+          updatedCandles = updatedCandles.slice(-1000);
+        }
+      }
 
-    return newRooms;
-  });
-}, []);
+      room.candles.set(candle.timeframe, updatedCandles);
 
+      return newRooms;
+    });
+  }, []);
 
   const connect = useCallback(() => {
     if (isConnectingRef.current || wsRef.current?.readyState === WebSocket.OPEN) {
@@ -260,38 +270,48 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
         try {
           const data = JSON.parse(event.data);
           
-          // Check message type and route accordingly
-          
-          // Type 1: Transaction (has purchase_type and token_pair)
+          // Type 1: Transaction
           if (data.purchase_type && data.token_pair) {
-            console.log('📡 Transaction:', data.token_pair, 'dex_tag:', data.dex_tag, 'dex_type:', data.dex_type);
-            console.log('📡 Full transaction data:', data);
+            console.log('📡 Transaction:', data.token_pair, 'dex_tag:', data.dex_tag);
             addTransactionToRoom(data as TransactionData);
           } 
-          // Type 2: Metrics Update (has timeframe, token_pair, and price_change)
+          // Type 2: Metrics Update
           else if (data.timeframe && data.token_pair && data.price_change !== undefined) {
             console.log('📊 Metrics Update:', data.token_pair, data.timeframe);
             updateRoomMetrics(data as PeriodStatsUpdate);
           }
-          // Type 3: Current Price (has usd_current_price and sol_relative_price)
+          // Type 3: Current Price
           else if (data.usd_current_price !== undefined && data.sol_relative_price !== undefined) {
-            console.log('💰 Price Update');
-            // Since price updates don't include token_pair from backend,
-            // we need to apply to all rooms or add token_pair on backend
-            // For now, let's assume it comes with token_pair
+            console.log('💰 Price Update for:', data.token_pair || 'unknown');
             if (data.token_pair) {
               updateRoomPrice(data as PriceInfo, data.token_pair);
-            } else {
-              console.warn('⚠️ Price update missing token_pair');
             }
           }
-          else if (data.token_pair && data.open !== undefined && data.high !== undefined && data.low !== undefined && data.close !== undefined) {
-            console.log('🕯️ Candle Update:', data.token_pair, data.timeframe);
+          // Type 4: OHLCV Candle - CRITICAL CHECK
+          else if (
+            data.token_pair && 
+            data.timeframe &&
+            data.timestamp !== undefined &&
+            data.open !== undefined && 
+            data.high !== undefined && 
+            data.low !== undefined && 
+            data.close !== undefined &&
+            data.volume !== undefined
+          ) {
+            console.log('🕯️ Candle Update:', {
+              pair: data.token_pair,
+              timeframe: data.timeframe,
+              timestamp: data.timestamp,
+              date: new Date(data.timestamp).toISOString(),
+              ohlc: `O:${data.open} H:${data.high} L:${data.low} C:${data.close}`,
+              volume: data.volume
+            });
             addCandleToRoom(data as CandleData);
           }
           // Unknown message type
           else {
-            console.log('❓ Unknown message type:', data);
+            console.log('❓ Unknown message type:', Object.keys(data).join(', '));
+            console.log('Full data:', data);
           }
         } catch (error) {
           console.error('❌ WebSocket: Failed to parse message:', error);
@@ -322,11 +342,10 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       setConnectionStatus('error');
       isConnectingRef.current = false;
     }
-  }, [url, addTransactionToRoom, updateRoomMetrics, updateRoomPrice]);
+  }, [url, addTransactionToRoom, updateRoomMetrics, updateRoomPrice, addCandleToRoom]);
 
   const disconnect = useCallback(() => {
     console.log('🛑 WebSocket: Manual disconnect');
-    
     isConnectingRef.current = false;
     
     if (wsRef.current) {
@@ -349,7 +368,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       const room = newRooms.get(roomId)!;
       room.subscribers.add(subscriberId);
       
-      console.log(`👤 ${subscriberId} joined room ${roomId} (${room.subscribers.size} total subscribers)`);
+      console.log(`👤 ${subscriberId} joined room ${roomId} (${room.subscribers.size} total)`);
       
       return newRooms;
     });
@@ -362,7 +381,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       
       if (room) {
         room.subscribers.delete(subscriberId);
-        console.log(`👋 ${subscriberId} left room ${roomId} (${room.subscribers.size} remaining subscribers)`);
+        console.log(`👋 ${subscriberId} left room ${roomId} (${room.subscribers.size} remaining)`);
       }
       
       return newRooms;
@@ -381,9 +400,15 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
 
   const getRoomCandles = useCallback((roomId: string, timeframe: string): CandleData[] => {
     const room = rooms.get(roomId);
-    return room?.candles.get(timeframe) || [];
+    const candles = room?.candles.get(timeframe) || [];
+    
+    if (candles.length > 0) {
+      console.log(`📊 Fetching ${candles.length} candles for ${roomId} ${timeframe}`);
+      console.log(`   Latest: ${new Date(candles[candles.length - 1].timestamp).toISOString()}`);
+    }
+    
+    return candles;
   }, [rooms]);
-
 
   const getAllTransactions = useCallback((): TransactionData[] => {
     return allTransactions;
@@ -396,9 +421,8 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     return () => {
       disconnect();
     };
-  }, []); // Empty deps to avoid reconnect loop
+  }, []);
 
-  // Get active rooms (rooms with subscribers)
   const activeRooms = Array.from(rooms.entries())
     .filter(([_, room]) => room.subscribers.size > 0)
     .map(([roomId]) => roomId);
@@ -411,10 +435,10 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     leaveRoom,
     getRoomTransactions,
     getRoomMetrics,
+    getRoomCandles,
     connect,
     disconnect,
     getAllTransactions,
-    getRoomCandles
   };
 
   return (
