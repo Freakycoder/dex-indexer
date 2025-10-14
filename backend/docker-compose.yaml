@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  backend: 
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dex-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - GRPC_URL=${GRPC_URL}
+      - GRPC_TOKEN=${GRPC_TOKEN}
+      - HELIUS_URL=${HELIUS_URL}
+      - METRICS_CONSUMER_GROUP=metrics_group
+      - METRICS_WORKER=metrics_worker_1
+      - OHLCV_CONSUMER_GROUP=ohlcv_group
+      - OHLCV_WORKER=ohlcv_worker_1
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: dex-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+volumes:
+  redis-data:
+
+networks:
+  backend-network:
+    driver: bridge
