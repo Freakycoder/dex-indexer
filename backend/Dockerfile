@@ -1,11 +1,6 @@
 FROM rust:latest AS builder
 # creates a working directory inside the docker container. whenever we copy files from host machine it goes to /app in docker container
 WORKDIR /dex_backend
-
-ARG REDIS_URL
-
-ENV REDIS_URL=${REDIS_URL}
-
 # we can also write ./ instead of /dex_backend/ since (.) dot represent pwd 
 COPY Cargo.toml Cargo.lock ./
 COPY api_server/Cargo.toml ./api_server/
@@ -48,7 +43,13 @@ COPY --from=builder /dex_backend/target/release/metrics_service ./metrics_servic
 COPY --from=builder /dex_backend/target/release/metrics_worker ./metrics_worker
 COPY --from=builder /dex_backend/target/release/ohlcv_worker ./ohlcv_worker
 COPY --from=builder /dex_backend/target/release/txn_worker ./txn_worker
+COPY --from=builder /dex_backend/start.sh ./start.sh
 # chmod changes the permission (mode) of file to +x (executables) for all files (./*) 
 RUN chmod +x ./*
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/api/health || exit 1
 # cmd is the command that runs when u start the image. sleep infinity is a dummy command that keeps the container alive but does nothing
-CMD ["sleep", "infinity"]
+CMD ["./start.sh"]
